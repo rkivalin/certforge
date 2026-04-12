@@ -1,3 +1,9 @@
+certforge (0.3.0-1) unstable; urgency=low
+
+  *
+
+ -- Roman Kivalin <roman@shl.dev>  Sat, 12 Apr 2026 22:30:00 +0000
+
 certforge (0.2.0-1) unstable; urgency=low
 
   * Build on Ubuntu 22.04 for glibc 2.35 compatibility (Debian 12+)

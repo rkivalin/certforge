@@ -1,14 +1,18 @@
 # Changelog
 
-## 0.2.0 (unreleased)
+## 0.3.0 (unreleased)
 
 ### Features
 
 ### Fixes
 
-- Build on Ubuntu 22.04 for glibc 2.35 compatibility (Debian 12+)
-
 ### Changes
+
+## 0.2.0 (2026-04-12)
+
+### Fixes
+
+- Build on Ubuntu 22.04 for glibc 2.35 compatibility (Debian 12+)
 
 ## 0.1.0 (2026-04-12)
 
