@@ -47,11 +47,10 @@ fn decode_tsig_key(raw: &[u8]) -> Result<Vec<u8>> {
     let trimmed: Vec<u8> = raw.iter().copied().filter(|b| !b.is_ascii_whitespace()).collect();
 
     // Try standard base64 first, then URL-safe
-    if let Ok(decoded) = base64::engine::general_purpose::STANDARD.decode(&trimmed) {
-        if !decoded.is_empty() {
+    if let Ok(decoded) = base64::engine::general_purpose::STANDARD.decode(&trimmed)
+        && !decoded.is_empty() {
             return Ok(decoded);
         }
-    }
 
     // If it doesn't decode as base64, assume it's already raw binary
     Ok(raw.to_vec())

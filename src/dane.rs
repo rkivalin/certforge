@@ -66,7 +66,7 @@ pub async fn publish_tlsa(
         let zone = find_zone(&name)?;
 
         updater
-            .replace_tlsa_records(&zone, &name, &[record.clone()], dane.ttl)
+            .replace_tlsa_records(&zone, &name, std::slice::from_ref(record), dane.ttl)
             .await?;
     }
 

@@ -28,11 +28,10 @@ pub async fn run(
     let acme = AcmeClient::new(&config.acme).await?;
 
     for cert_config in &config.certificates {
-        if let Some(filter) = name_filter {
-            if cert_config.name != filter {
+        if let Some(filter) = name_filter
+            && cert_config.name != filter {
                 continue;
             }
-        }
 
         match renew_certificate(config, &acme, cert_config, &mut state, state_dir, force, dry_run)
             .await
@@ -83,8 +82,8 @@ async fn renew_certificate(
     }
 
     // Check if existing certificate needs renewal
-    if !force {
-        if let Ok(cert) = CertInfo::load(&cert_config.cert_path) {
+    if !force
+        && let Ok(cert) = CertInfo::load(&cert_config.cert_path) {
             let days = cert.days_until_expiry();
             if !cert.expires_within_days(cert_config.renew_before_days) {
                 tracing::info!(
@@ -101,7 +100,6 @@ async fn renew_certificate(
             );
         }
         // If cert doesn't exist or can't be parsed, proceed with issuance
-    }
 
     // Determine key pair
     let key = if let Some(pending) = state.pending_rotations.remove(&cert_config.name) {

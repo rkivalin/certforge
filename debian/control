@@ -1,0 +1,16 @@
+Source: certforge
+Section: admin
+Priority: optional
+Maintainer: Roman Kivalin <roman@shl.dev>
+Build-Depends: debhelper-compat (= 13), cargo, rustc
+Standards-Version: 4.6.2
+Rules-Requires-Root: no
+
+Package: certforge
+Architecture: any
+Depends: ${shlibs:Depends}, ${misc:Depends}, systemd
+Description: ACME certificate manager with DANE and systemd integration
+ Certforge automates ACME certificate issuance and renewal using DNS-01
+ challenges via RFC 2136 dynamic DNS updates. It publishes DANE TLSA
+ records, integrates with systemd credentials for secret storage, and
+ supports post-renewal hooks to reload/restart services.

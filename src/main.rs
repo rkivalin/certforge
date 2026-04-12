@@ -103,11 +103,10 @@ async fn main() -> anyhow::Result<()> {
 
 fn print_status(config: &config::Config, name_filter: Option<&str>) {
     for cert_config in &config.certificates {
-        if let Some(filter) = name_filter {
-            if cert_config.name != filter {
+        if let Some(filter) = name_filter
+            && cert_config.name != filter {
                 continue;
             }
-        }
 
         println!("Certificate: {}", cert_config.name);
         println!("  Domains: {}", cert_config.domains.join(", "));
@@ -149,11 +148,10 @@ async fn dane_publish(
     dry_run: bool,
 ) -> anyhow::Result<()> {
     for cert_config in &config.certificates {
-        if let Some(filter) = name_filter {
-            if cert_config.name != filter {
+        if let Some(filter) = name_filter
+            && cert_config.name != filter {
                 continue;
             }
-        }
 
         if cert_config.dane.is_empty() {
             continue;
@@ -196,11 +194,10 @@ async fn dane_check(
     name_filter: Option<&str>,
 ) -> anyhow::Result<()> {
     for cert_config in &config.certificates {
-        if let Some(filter) = name_filter {
-            if cert_config.name != filter {
+        if let Some(filter) = name_filter
+            && cert_config.name != filter {
                 continue;
             }
-        }
 
         if cert_config.dane.is_empty() {
             continue;

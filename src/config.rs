@@ -8,7 +8,7 @@ use crate::error::{Error, Result};
 pub struct Config {
     pub acme: AcmeConfig,
     pub dns: DnsConfig,
-    #[serde(rename = "certificate")]
+    #[serde(rename = "certificate", default)]
     pub certificates: Vec<CertificateConfig>,
 }
 

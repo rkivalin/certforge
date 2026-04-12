@@ -1,0 +1,190 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  build:
+    strategy:
+      matrix:
+        include:
+          - target: x86_64-unknown-linux-gnu
+            os: ubuntu-latest
+            arch: amd64
+          - target: aarch64-unknown-linux-gnu
+            os: ubuntu-latest
+            arch: arm64
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Install Rust toolchain
+        run: |
+          rustup toolchain install stable --profile minimal
+          rustup target add "${{ matrix.target }}"
+
+      - name: Install cross-compilation tools
+        if: matrix.target == 'aarch64-unknown-linux-gnu'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y gcc-aarch64-linux-gnu
+
+      - name: Build
+        env:
+          CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_LINKER: aarch64-linux-gnu-gcc
+        run: cargo build --release --locked --target "${{ matrix.target }}"
+
+      - name: Run tests
+        if: matrix.target == 'x86_64-unknown-linux-gnu'
+        run: cargo test --locked
+
+      - name: Package binary
+        run: |
+          cd "target/${{ matrix.target }}/release"
+          tar czf "../../../certforge-${{ matrix.arch }}.tar.gz" certforge
+          cd ../../..
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v7
+        with:
+          name: certforge-${{ matrix.arch }}
+          path: certforge-${{ matrix.arch }}.tar.gz
+
+  package-archlinux:
+    needs: build
+    runs-on: ubuntu-latest
+    container: archlinux:base-devel
+    strategy:
+      matrix:
+        include:
+          - arch: x86_64
+            artifact: amd64
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Install dependencies
+        run: |
+          pacman -Syu --noconfirm rust
+
+      - name: Build package
+        run: |
+          # makepkg can't run as root, create a build user
+          useradd -m builder
+          chown -R builder:builder .
+          # Adjust PKGBUILD source to use local files
+          cd /tmp
+          VERSION=${GITHUB_REF_NAME#v}
+          mkdir -p "certforge-$VERSION"
+          cp -a "$GITHUB_WORKSPACE"/* "certforge-$VERSION/"
+          tar czf "certforge-$VERSION.tar.gz" "certforge-$VERSION"
+          cp "$GITHUB_WORKSPACE/PKGBUILD" .
+          sed -i "s|pkgver=.*|pkgver=$VERSION|" PKGBUILD
+          sed -i "s|source=.*|source=(\"certforge-$VERSION.tar.gz\")|" PKGBUILD
+          chown -R builder:builder /tmp/certforge-* /tmp/PKGBUILD
+          su builder -c 'makepkg -s --noconfirm --skipinteg'
+          cp /tmp/*.pkg.tar.zst "$GITHUB_WORKSPACE/"
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v7
+        with:
+          name: archlinux-package
+          path: "*.pkg.tar.zst"
+
+  package-debian:
+    needs: build
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        include:
+          - arch: amd64
+            target: x86_64-unknown-linux-gnu
+          - arch: arm64
+            target: aarch64-unknown-linux-gnu
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Download binary
+        uses: actions/download-artifact@v8
+        with:
+          name: certforge-${{ matrix.arch }}
+
+      - name: Build .deb
+        run: |
+          VERSION=${GITHUB_REF_NAME#v}
+          PKG=certforge_${VERSION}-1_${{ matrix.arch }}
+          mkdir -p "$PKG/DEBIAN"
+          mkdir -p "$PKG/usr/bin"
+          mkdir -p "$PKG/usr/lib/systemd/system"
+          mkdir -p "$PKG/etc/certforge/certs"
+
+          tar xzf "certforge-${{ matrix.arch }}.tar.gz"
+          install -Dm755 certforge "$PKG/usr/bin/certforge"
+          install -Dm644 examples/certforge.service "$PKG/usr/lib/systemd/system/certforge.service"
+          install -Dm644 examples/certforge.timer "$PKG/usr/lib/systemd/system/certforge.timer"
+          install -Dm644 examples/config.toml "$PKG/etc/certforge/config.toml"
+
+          cat >"$PKG/DEBIAN/control" <<CTRL
+          Package: certforge
+          Version: ${VERSION}-1
+          Architecture: ${{ matrix.arch }}
+          Maintainer: Roman Kivalin <roman@shl.dev>
+          Depends: systemd
+          Section: admin
+          Priority: optional
+          Description: ACME certificate manager with DANE and systemd integration
+           Certforge automates ACME certificate issuance and renewal using DNS-01
+           challenges via RFC 2136 dynamic DNS updates with DANE TLSA support.
+          CTRL
+
+          echo "/etc/certforge/config.toml" >"$PKG/DEBIAN/conffiles"
+
+          dpkg-deb --build --root-owner-group "$PKG"
+          mv "${PKG}.deb" "certforge_${VERSION}-1_${{ matrix.arch }}.deb"
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v7
+        with:
+          name: debian-${{ matrix.arch }}
+          path: "*.deb"
+
+  release:
+    needs: [build, package-archlinux, package-debian]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Download all artifacts
+        uses: actions/download-artifact@v8
+        with:
+          path: artifacts
+
+      - name: Create release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          VERSION=${GITHUB_REF_NAME#v}
+          # Collect all release files
+          mkdir release
+          cp artifacts/certforge-amd64/certforge-amd64.tar.gz release/
+          cp artifacts/certforge-arm64/certforge-arm64.tar.gz release/
+          cp artifacts/archlinux-package/*.pkg.tar.zst release/ || true
+          cp artifacts/debian-amd64/*.deb release/ || true
+          cp artifacts/debian-arm64/*.deb release/ || true
+
+          # Generate checksums
+          cd release
+          sha256sum * >SHA256SUMS
+          cd ..
+
+          gh release create "${GITHUB_REF_NAME}" \
+            --title "certforge ${VERSION}" \
+            --generate-notes \
+            release/*

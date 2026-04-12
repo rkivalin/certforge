@@ -1,0 +1,23 @@
+#!/usr/bin/make -f
+export CARGO_HOME = $(CURDIR)/debian/cargo_home
+export RUSTUP_TOOLCHAIN = stable
+
+%:
+	dh $@
+
+override_dh_auto_build:
+	cargo build --release --frozen
+
+override_dh_auto_test:
+	cargo test --release --frozen
+
+override_dh_auto_install:
+	install -Dm755 target/release/certforge debian/certforge/usr/bin/certforge
+	install -Dm644 examples/certforge.service debian/certforge/usr/lib/systemd/system/certforge.service
+	install -Dm644 examples/certforge.timer debian/certforge/usr/lib/systemd/system/certforge.timer
+	install -Dm644 examples/config.toml debian/certforge/etc/certforge/config.toml
+	install -dm750 debian/certforge/etc/certforge/certs
+	install -dm700 debian/certforge/var/lib/certforge
+
+override_dh_auto_clean:
+	cargo clean || true

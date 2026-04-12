@@ -39,7 +39,7 @@ impl AcmeClient {
                     Error::Config(format!("invalid account credentials: {e}"))
                 })?;
                 let account = Account::builder()
-                    .map_err(|e| Error::Acme(e))?
+                    .map_err(Error::Acme)?
                     .from_credentials(creds)
                     .await?;
                 tracing::info!(id = %account.id(), "loaded existing ACME account");
@@ -48,7 +48,7 @@ impl AcmeClient {
             Err(_) => {
                 tracing::info!(directory = %config.directory_url, "creating new ACME account");
                 let (account, creds) = Account::builder()
-                    .map_err(|e| Error::Acme(e))?
+                    .map_err(Error::Acme)?
                     .create(
                         &NewAccount {
                             contact: &config
