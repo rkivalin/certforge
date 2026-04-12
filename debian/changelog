@@ -1,3 +1,9 @@
+certforge (0.2.0-1) unstable; urgency=low
+
+  *
+
+ -- Roman Kivalin <roman@shl.dev>  Sat, 12 Apr 2026 22:00:00 +0000
+
 certforge (0.1.0-1) unstable; urgency=low
 
   * Initial release.
