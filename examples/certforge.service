@@ -1,0 +1,19 @@
+[Unit]
+Description=Certforge ACME certificate renewal
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/certforge renew
+
+# Hardening
+ProtectSystem=strict
+ReadWritePaths=/etc/certforge/certs /var/lib/certforge /etc/credstore.encrypted
+PrivateTmp=yes
+NoNewPrivileges=yes
+ProtectHome=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectControlGroups=yes
+RestrictSUIDSGID=yes

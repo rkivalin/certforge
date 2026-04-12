@@ -1,0 +1,85 @@
+# Example certforge configuration
+#
+# Full documentation: see the project README
+
+[acme]
+directory_url = "https://acme-v02.api.letsencrypt.org/directory"
+# Use staging for testing:
+# directory_url = "https://acme-staging-v02.api.letsencrypt.org/directory"
+
+# ACME account key: stored as encrypted systemd credential
+account_key_credential = "/etc/credstore.encrypted/acme-account-key"
+# Or as a plain file:
+# account_key_path = "/etc/certforge/account.key"
+
+contact = ["mailto:admin@example.com"]
+
+# Default DNS server for RFC 2136 updates
+[dns.defaults]
+server = "ns1.example.com"
+tsig_key_credential = "/etc/credstore.encrypted/dns-tsig-key"
+# tsig_key_path = "/etc/certforge/tsig.key"
+tsig_key_name = "certforge-update."
+tsig_algorithm = "hmac-sha256"
+port = 53
+protocol = "tcp"
+
+# Per-zone DNS overrides (optional)
+# [dns.zones."example.org"]
+# server = "ns2.example.org"
+# tsig_key_credential = "/etc/credstore.encrypted/dns-tsig-org"
+
+# Mail server certificate
+[[certificate]]
+name = "mail"
+domains = ["mail.example.com"]
+key_type = "ecdsa-p256"
+key_credential = "/etc/credstore.encrypted/mail-tls-key"
+cert_path = "/etc/certforge/certs/mail.pem"
+renew_before_days = 30
+rotate_key = false
+
+  # DANE TLSA for SMTP (port 25)
+  [[certificate.dane]]
+  usage = "ee"
+  selector = "spki"
+  matching = "sha256"
+  names = ["_25._tcp.mail.example.com"]
+  ttl = 300
+  pre_publish = true
+
+  # DANE TLSA for IMAP (port 993)
+  [[certificate.dane]]
+  usage = "ee"
+  selector = "spki"
+  matching = "sha256"
+  names = ["_993._tcp.mail.example.com"]
+  ttl = 300
+
+  [[certificate.hook]]
+  type = "systemd-reload"
+  unit = "postfix.service"
+
+  [[certificate.hook]]
+  type = "systemd-restart"
+  unit = "dovecot.service"
+
+# Web server certificate
+[[certificate]]
+name = "web"
+domains = ["example.com", "www.example.com"]
+key_type = "ecdsa-p256"
+key_credential = "/etc/credstore.encrypted/web-tls-key"
+cert_path = "/etc/certforge/certs/web.pem"
+renew_before_days = 30
+
+  [[certificate.dane]]
+  usage = "ee"
+  selector = "spki"
+  matching = "sha256"
+  names = ["_443._tcp.example.com", "_443._tcp.www.example.com"]
+  ttl = 3600
+
+  [[certificate.hook]]
+  type = "systemd-reload"
+  unit = "nginx.service"
