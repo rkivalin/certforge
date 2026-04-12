@@ -3,6 +3,12 @@ name = "certforge"
 version = "0.1.0"
 edition = "2024"
 
+[profile.release]
+lto = true            # link-time optimization — enables cross-crate dead code elimination
+codegen-units = 1     # single codegen unit — better optimization at cost of compile time
+strip = true          # strip debug symbols and metadata
+panic = "abort"       # no unwinding machinery — smaller binary, simpler code
+
 [dependencies]
 # ACME
 instant-acme = "0.8"
@@ -22,7 +28,7 @@ hex = "0.4"
 rustls-pki-types = "1"
 
 # Async
-tokio = { version = "1", features = ["full"] }
+tokio = { version = "1", features = ["macros", "rt-multi-thread", "net", "time", "process", "io-util"] }
 
 # CLI
 clap = { version = "4", features = ["derive"] }
