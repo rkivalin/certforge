@@ -1,5 +1,14 @@
 certforge (0.1.0-1) unstable; urgency=low
 
   * Initial release.
+  * ACME certificate issuance and renewal via DNS-01 challenges (RFC 8555)
+  * RFC 2136 dynamic DNS updates with TSIG authentication
+  * DANE TLSA record publication (RFC 6698/7671/7672)
+  * Key rotation with DANE pre-publication protocol
+  * ECDSA P-256 and P-384 key generation
+  * systemd credential integration (systemd-creds encrypt/decrypt)
+  * systemd unit reload/restart hooks via D-Bus
+  * TOML configuration with per-zone DNS overrides
+  * Systemd service and timer units included
 
  -- Roman Kivalin <roman@shl.dev>  Sat, 12 Apr 2026 18:00:00 +0000
