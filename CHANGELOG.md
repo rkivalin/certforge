@@ -1,14 +1,18 @@
 # Changelog
 
-## 0.3.0 (unreleased)
+## 0.4.0 (unreleased)
 
 ### Features
 
 ### Fixes
 
-- Add DNS propagation delay before ACME challenge validation
-
 ### Changes
+
+## 0.3.0 (2026-04-12)
+
+### Fixes
+
+- Add DNS propagation delay before ACME challenge validation
 
 ## 0.2.0 (2026-04-12)
 

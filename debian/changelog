@@ -1,3 +1,9 @@
+certforge (0.4.0-1) unstable; urgency=low
+
+  *
+
+ -- Roman Kivalin <roman@shl.dev>  Sat, 12 Apr 2026 23:00:00 +0000
+
 certforge (0.3.0-1) unstable; urgency=low
 
   * Add DNS propagation delay before ACME challenge validation
