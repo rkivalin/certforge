@@ -11,7 +11,7 @@ panic = "abort"       # no unwinding machinery — smaller binary, simpler code
 
 [dependencies]
 # ACME
-instant-acme = "0.8"
+instant-acme = { version = "0.8", default-features = false, features = ["hyper-rustls", "ring"] }
 
 # DNS
 hickory-proto = { version = "0.25", features = ["dnssec-ring"] }

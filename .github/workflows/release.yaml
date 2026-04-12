@@ -62,35 +62,54 @@ jobs:
     needs: build
     runs-on: ubuntu-latest
     container: archlinux:base-devel
-    strategy:
-      matrix:
-        include:
-          - arch: x86_64
-            artifact: amd64
     steps:
       - uses: actions/checkout@v6
 
-      - name: Install dependencies
-        run: |
-          pacman -Syu --noconfirm rust
+      - name: Download binary
+        uses: actions/download-artifact@v8
+        with:
+          name: certforge-amd64
 
       - name: Build package
         run: |
-          # makepkg can't run as root, create a build user
+          pacman -Syu --noconfirm
+
+          VERSION=${GITHUB_REF_NAME#v}
+
+          # Create a fake PKGBUILD that packages the pre-built binary
+          cat >PKGBUILD <<'PKGEOF'
+          # Maintainer: Roman Kivalin <roman@shl.dev>
+          pkgname=certforge
+          pkgver=VERSION_PLACEHOLDER
+          pkgrel=1
+          pkgdesc='ACME certificate manager with DANE and systemd integration'
+          arch=('x86_64')
+          url='https://github.com/rkivalin/certforge'
+          license=('MIT')
+          depends=('systemd-libs')
+          source=("certforge-amd64.tar.gz"
+                  "certforge.service"
+                  "certforge.timer"
+                  "config.toml")
+          sha256sums=('SKIP' 'SKIP' 'SKIP' 'SKIP')
+
+          package() {
+            install -Dm755 "$srcdir/certforge" "$pkgdir/usr/bin/certforge"
+            install -Dm644 "$srcdir/certforge.service" "$pkgdir/usr/lib/systemd/system/certforge.service"
+            install -Dm644 "$srcdir/certforge.timer" "$pkgdir/usr/lib/systemd/system/certforge.timer"
+            install -Dm644 "$srcdir/config.toml" "$pkgdir/etc/certforge/config.toml"
+            install -dm750 "$pkgdir/etc/certforge/certs"
+            install -dm700 "$pkgdir/var/lib/certforge"
+          }
+          PKGEOF
+          sed -i "s/VERSION_PLACEHOLDER/$VERSION/" PKGBUILD
+
+          # Place source files where makepkg expects them
+          cp examples/certforge.service examples/certforge.timer examples/config.toml .
+
           useradd -m builder
           chown -R builder:builder .
-          # Adjust PKGBUILD source to use local files
-          cd /tmp
-          VERSION=${GITHUB_REF_NAME#v}
-          mkdir -p "certforge-$VERSION"
-          cp -a "$GITHUB_WORKSPACE"/* "certforge-$VERSION/"
-          tar czf "certforge-$VERSION.tar.gz" "certforge-$VERSION"
-          cp "$GITHUB_WORKSPACE/PKGBUILD" .
-          sed -i "s|pkgver=.*|pkgver=$VERSION|" PKGBUILD
-          sed -i "s|source=.*|source=(\"certforge-$VERSION.tar.gz\")|" PKGBUILD
-          chown -R builder:builder /tmp/certforge-* /tmp/PKGBUILD
-          su builder -c 'makepkg -s --noconfirm --skipinteg'
-          cp /tmp/*.pkg.tar.zst "$GITHUB_WORKSPACE/"
+          su builder -c 'makepkg --noconfirm --skipinteg'
 
       - name: Upload artifact
         uses: actions/upload-artifact@v7
@@ -147,7 +166,6 @@ jobs:
           echo "/etc/certforge/config.toml" >"$PKG/DEBIAN/conffiles"
 
           dpkg-deb --build --root-owner-group "$PKG"
-          mv "${PKG}.deb" "certforge_${VERSION}-1_${{ matrix.arch }}.deb"
 
       - name: Upload artifact
         uses: actions/upload-artifact@v7
