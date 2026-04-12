@@ -227,6 +227,10 @@ async fn renew_certificate(
 
     // Run the ACME order flow, ensuring TXT cleanup happens even on failure
     let order_result = async {
+        // Wait for DNS propagation
+        tracing::debug!("waiting 5s for DNS propagation");
+        tokio::time::sleep(std::time::Duration::from_secs(5)).await;
+
         // Tell ACME server challenges are ready
         tracing::debug!(name = %cert_config.name, "setting challenges ready");
         AcmeClient::set_challenges_ready(&mut order).await?;

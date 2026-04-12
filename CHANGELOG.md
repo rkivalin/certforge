@@ -6,6 +6,8 @@
 
 ### Fixes
 
+- Add DNS propagation delay before ACME challenge validation
+
 ### Changes
 
 ## 0.2.0 (2026-04-12)
