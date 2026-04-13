@@ -22,7 +22,10 @@ contact = ["mailto:admin@example.com"]
 # DNS client connections — referenced by solvers and DANE blocks
 [dns.main]
 server = "ns1.example.com"
+# Single zone:
 zone = "example.com"
+# Multiple zones on the same server (longest suffix match):
+# zones = ["example.com", "example.org"]
 # tsig_key_credential = "/etc/credstore.encrypted/dns-tsig-key"
 tsig_key_path = "/etc/certforge/tsig.key"
 tsig_key_name = "certforge."
@@ -30,8 +33,8 @@ tsig_algorithm = "hmac-sha256"
 port = 53
 protocol = "tcp"
 
-# Additional DNS clients for other zones
-# [dns.org]
+# Additional DNS clients (e.g., different server or TSIG key)
+# [dns.other]
 # server = "ns2.example.org"
 # zone = "example.org"
 # tsig_key_credential = "/etc/credstore.encrypted/dns-tsig-org"

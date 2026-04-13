@@ -235,8 +235,8 @@ fn print_init_commands(config: &config::Config) {
     for (name, dns) in &config.dns {
         if let Some(path) = &dns.tsig_key_credential {
             println!(
-                "# DNS TSIG key for '{name}' (zone {})\nsystemd-creds encrypt --name={} - {}\n",
-                dns.zone,
+                "# DNS TSIG key for '{name}' (zones: {:?})\nsystemd-creds encrypt --name={} - {}\n",
+                dns.all_zones(),
                 dns.tsig_key_name,
                 path.display()
             );

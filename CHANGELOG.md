@@ -4,6 +4,9 @@
 
 ### Features
 
+- Support multiple zones per DNS client (`zones = [...]`), with automatic longest-suffix matching
+- Config validation: certificate domains and DANE names are checked against DNS client zones
+
 ### Fixes
 
 ### Changes

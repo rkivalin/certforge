@@ -15,15 +15,29 @@ impl Dns01Solver {
     pub fn new(dns_config: DnsClientConfig) -> Self {
         Self { dns_config }
     }
+
+    fn resolve_zone(&self, txt_name: &str) -> Result<String> {
+        self.dns_config
+            .find_zone(txt_name)
+            .map(|z| z.to_string())
+            .ok_or_else(|| {
+                Error::DnsUpdate(format!(
+                    "no matching zone for '{txt_name}' in zones {:?}",
+                    self.dns_config.all_zones()
+                ))
+            })
+    }
 }
 
 #[async_trait::async_trait]
 impl super::Solver for Dns01Solver {
     async fn present(&self, challenge: &ChallengeInfo) -> Result<()> {
         let txt_name = format!("_acme-challenge.{}", challenge.identifier);
+        let zone_str = self.resolve_zone(&txt_name)?;
+
         tracing::debug!(
             identifier = %challenge.identifier,
-            zone = %self.dns_config.zone,
+            zone = %zone_str,
             server = %self.dns_config.server,
             %txt_name,
             "publishing DNS-01 challenge TXT record"
@@ -34,7 +48,7 @@ impl super::Solver for Dns01Solver {
 
         let name = Name::from_ascii(&txt_name)
             .map_err(|e| Error::DnsUpdate(format!("invalid TXT name: {e}")))?;
-        let zone = Name::from_ascii(&self.dns_config.zone)
+        let zone = Name::from_ascii(&zone_str)
             .map_err(|e| Error::DnsUpdate(format!("invalid zone: {e}")))?;
 
         updater.add_txt_record(&zone, &name, &challenge.dns_value, 60).await
@@ -42,6 +56,8 @@ impl super::Solver for Dns01Solver {
 
     async fn cleanup(&self, challenge: &ChallengeInfo) -> Result<()> {
         let txt_name = format!("_acme-challenge.{}", challenge.identifier);
+        let zone_str = self.resolve_zone(&txt_name)?;
+
         tracing::debug!(
             identifier = %challenge.identifier,
             %txt_name,
@@ -53,7 +69,7 @@ impl super::Solver for Dns01Solver {
 
         let name = Name::from_ascii(&txt_name)
             .map_err(|e| Error::DnsUpdate(format!("invalid TXT name: {e}")))?;
-        let zone = Name::from_ascii(&self.dns_config.zone)
+        let zone = Name::from_ascii(&zone_str)
             .map_err(|e| Error::DnsUpdate(format!("invalid zone: {e}")))?;
 
         updater.delete_txt_record(&zone, &name, &challenge.dns_value).await

@@ -44,7 +44,13 @@ fn default_directory_url() -> String {
 #[derive(Debug, Clone, Deserialize)]
 pub struct DnsClientConfig {
     pub server: String,
-    pub zone: String,
+
+    /// Single zone (convenience shorthand).
+    #[serde(default)]
+    pub zone: Option<String>,
+    /// Multiple zones served by this DNS client.
+    #[serde(default)]
+    pub zones: Option<Vec<String>>,
 
     pub tsig_key_credential: Option<PathBuf>,
     pub tsig_key_path: Option<PathBuf>,
@@ -56,6 +62,38 @@ pub struct DnsClientConfig {
     pub port: u16,
     #[serde(default = "default_dns_protocol")]
     pub protocol: DnsProtocol,
+}
+
+impl DnsClientConfig {
+    /// Get all configured zones.
+    pub fn all_zones(&self) -> Vec<&str> {
+        let mut result = Vec::new();
+        if let Some(zones) = &self.zones {
+            result.extend(zones.iter().map(|s| s.as_str()));
+        }
+        if let Some(zone) = &self.zone
+            && !result.iter().any(|z| z == &zone.as_str()) {
+                result.push(zone.as_str());
+            }
+        result
+    }
+
+    /// Find the best matching zone for a DNS name.
+    /// Matches if `name == zone` or `name` ends with `.<zone>`.
+    /// Returns the longest (most specific) match.
+    pub fn find_zone(&self, name: &str) -> Option<&str> {
+        let name_lower = name.to_ascii_lowercase();
+        let name_lower = name_lower.trim_end_matches('.');
+
+        self.all_zones()
+            .into_iter()
+            .filter(|zone| {
+                let zone_lower = zone.to_ascii_lowercase();
+                let zone_lower = zone_lower.trim_end_matches('.');
+                name_lower == zone_lower || name_lower.ends_with(&format!(".{zone_lower}"))
+            })
+            .max_by_key(|zone| zone.len())
+    }
 }
 
 #[derive(Debug, Clone, Deserialize, PartialEq, Eq)]
@@ -306,6 +344,11 @@ impl Config {
                     "dns.{name}: either tsig_key_credential or tsig_key_path must be set"
                 )));
             }
+            if dns.all_zones().is_empty() {
+                return Err(Error::Config(format!(
+                    "dns.{name}: either zone or zones must be set"
+                )));
+            }
         }
 
         // Validate solver configs
@@ -390,6 +433,18 @@ impl Config {
                             cert.name
                         )));
                     }
+                    // DNS-01: verify domain matches a zone in the DNS client
+                    if let Some(SolverConfig::Dns01 { dns: dns_name }) = self.solver.get(name)
+                        && let Some(dns_config) = self.dns.get(dns_name.as_str()) {
+                            let challenge_name = format!("_acme-challenge.{domain}");
+                            if dns_config.find_zone(&challenge_name).is_none() {
+                                return Err(Error::Config(format!(
+                                    "certificate {}: domain '{domain}' does not match any zone in dns.{dns_name} ({:?})",
+                                    cert.name,
+                                    dns_config.all_zones()
+                                )));
+                            }
+                        }
                 }
             }
 
@@ -406,6 +461,17 @@ impl Config {
                         "certificate {}: dane dns client '{}' not found in [dns.*]",
                         cert.name, dane.dns
                     )));
+                }
+                // Verify each DANE name matches a zone in the DNS client
+                if let Some(dns_config) = self.dns.get(&dane.dns) {
+                    for tlsa_name in &dane.names {
+                        if dns_config.find_zone(tlsa_name).is_none() {
+                            return Err(Error::Config(format!(
+                                "certificate {}: DANE name '{tlsa_name}' does not match any zone in dns.{} ({:?})",
+                                cert.name, dane.dns, dns_config.all_zones()
+                            )));
+                        }
+                    }
                 }
             }
 
@@ -683,5 +749,120 @@ solvers = ["dns"]
         let config: Config = toml::from_str(toml).unwrap();
         let err = config.validate().unwrap_err();
         assert!(err.to_string().contains("solvers length"));
+    }
+
+    #[test]
+    fn zone_matching() {
+        let dns = DnsClientConfig {
+            server: "ns1.example.com".into(),
+            zone: None,
+            zones: Some(vec!["example.com".into(), "example.org".into(), "sub.example.com".into()]),
+            tsig_key_credential: None,
+            tsig_key_path: Some("/tmp/key".into()),
+            tsig_key_name: "test.".into(),
+            tsig_algorithm: TsigAlgorithm::HmacSha256,
+            port: 53,
+            protocol: DnsProtocol::Tcp,
+        };
+
+        // Basic matches
+        assert_eq!(dns.find_zone("mail.example.com"), Some("example.com"));
+        assert_eq!(dns.find_zone("mail.example.org"), Some("example.org"));
+        assert_eq!(dns.find_zone("example.com"), Some("example.com"));
+
+        // Longest match wins
+        assert_eq!(dns.find_zone("host.sub.example.com"), Some("sub.example.com"));
+
+        // DANE-style names
+        assert_eq!(dns.find_zone("_25._tcp.mail.example.com"), Some("example.com"));
+        assert_eq!(dns.find_zone("_443._tcp.host.sub.example.com"), Some("sub.example.com"));
+
+        // No match
+        assert_eq!(dns.find_zone("other.net"), None);
+
+        // Case insensitive
+        assert_eq!(dns.find_zone("Mail.Example.COM"), Some("example.com"));
+    }
+
+    #[test]
+    fn multi_zone_config() {
+        let toml = r#"
+[acme]
+account_key_path = "/etc/certforge/account.key"
+contact = ["mailto:admin@example.com"]
+
+[dns.main]
+server = "ns1.example.com"
+zones = ["example.com", "example.org"]
+tsig_key_path = "/etc/certforge/tsig.key"
+tsig_key_name = "certforge."
+
+[solver.dns]
+type = "dns-01"
+dns = "main"
+
+[[certificate]]
+name = "multi"
+domains = ["mail.example.com", "mail.example.org"]
+key_path = "/etc/certforge/keys/multi.key"
+cert_path = "/etc/certforge/certs/multi.pem"
+solver = "dns"
+
+  [[certificate.dane]]
+  dns = "main"
+  names = ["_25._tcp.mail.example.com", "_25._tcp.mail.example.org"]
+"#;
+
+        let config: Config = toml::from_str(toml).unwrap();
+        config.validate().unwrap();
+    }
+
+    #[test]
+    fn validation_rejects_domain_without_matching_zone() {
+        let toml = r#"
+[acme]
+account_key_path = "/etc/certforge/account.key"
+contact = ["mailto:admin@example.com"]
+
+[dns.main]
+server = "ns1.example.com"
+zone = "example.com"
+tsig_key_path = "/etc/certforge/tsig.key"
+tsig_key_name = "certforge."
+
+[solver.dns]
+type = "dns-01"
+dns = "main"
+
+[[certificate]]
+name = "bad"
+domains = ["mail.other.net"]
+key_path = "/etc/certforge/keys/bad.key"
+cert_path = "/etc/certforge/certs/bad.pem"
+solver = "dns"
+"#;
+
+        let config: Config = toml::from_str(toml).unwrap();
+        let err = config.validate().unwrap_err();
+        assert!(err.to_string().contains("does not match any zone"));
+    }
+
+    #[test]
+    fn zone_and_zones_combined() {
+        let dns = DnsClientConfig {
+            server: "ns1.example.com".into(),
+            zone: Some("legacy.com".into()),
+            zones: Some(vec!["example.com".into()]),
+            tsig_key_credential: None,
+            tsig_key_path: Some("/tmp/key".into()),
+            tsig_key_name: "test.".into(),
+            tsig_algorithm: TsigAlgorithm::HmacSha256,
+            port: 53,
+            protocol: DnsProtocol::Tcp,
+        };
+
+        assert_eq!(dns.all_zones(), vec!["example.com", "legacy.com"]);
+        assert_eq!(dns.find_zone("host.legacy.com"), Some("legacy.com"));
+        assert_eq!(dns.find_zone("host.example.com"), Some("example.com"));
     }
 }

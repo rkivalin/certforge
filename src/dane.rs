@@ -45,6 +45,15 @@ pub fn compute_tlsa_from_key(
 
 /// Publish TLSA records for a certificate via DNS updates.
 /// Zone is taken from the DnsClientConfig.
+fn resolve_zone_for_name<'a>(dns_config: &'a DnsClientConfig, name: &str) -> Result<&'a str> {
+    dns_config.find_zone(name).ok_or_else(|| {
+        Error::DnsUpdate(format!(
+            "no matching zone for '{name}' in zones {:?}",
+            dns_config.all_zones()
+        ))
+    })
+}
+
 pub async fn publish_tlsa(
     updater: &mut DnsUpdater,
     dns_config: &DnsClientConfig,
@@ -52,10 +61,11 @@ pub async fn publish_tlsa(
     records: &[TlsaRecord],
 ) -> Result<()> {
     let record = &records[0];
-    let zone = Name::from_ascii(&dns_config.zone)
-        .map_err(|e| Error::DnsUpdate(format!("invalid zone '{}': {e}", dns_config.zone)))?;
 
     for name_str in &dane.names {
+        let zone_str = resolve_zone_for_name(dns_config, name_str)?;
+        let zone = Name::from_ascii(zone_str)
+            .map_err(|e| Error::DnsUpdate(format!("invalid zone '{zone_str}': {e}")))?;
         let name = Name::from_ascii(name_str)
             .map_err(|e| Error::DnsUpdate(format!("invalid TLSA name {name_str}: {e}")))?;
 
@@ -74,10 +84,10 @@ pub async fn add_tlsa(
     dane: &DaneConfig,
     record: &TlsaRecord,
 ) -> Result<()> {
-    let zone = Name::from_ascii(&dns_config.zone)
-        .map_err(|e| Error::DnsUpdate(format!("invalid zone '{}': {e}", dns_config.zone)))?;
-
     for name_str in &dane.names {
+        let zone_str = resolve_zone_for_name(dns_config, name_str)?;
+        let zone = Name::from_ascii(zone_str)
+            .map_err(|e| Error::DnsUpdate(format!("invalid zone '{zone_str}': {e}")))?;
         let name = Name::from_ascii(name_str)
             .map_err(|e| Error::DnsUpdate(format!("invalid TLSA name {name_str}: {e}")))?;
 
