@@ -81,13 +81,15 @@ dns = "main"                    # references [dns.main]
 #   type = "systemd-reload"
 #   unit = "postfix.service"
 #
-# # Certificate with per-domain solver assignment
+# # IP address certificate (requires shortlived profile, ~6 day validity)
 # [[certificate]]
-# name = "mixed"
-# domains = ["example.com", "203.0.113.1", "2001:db8::1"]
+# name = "dns-server"
+# domains = ["dns.example.com", "203.0.113.1", "2001:db8::1"]
 # solvers = ["dns", "http", "http"]
-# key_path = "/etc/certforge/keys/mixed.key"
-# cert_path = "/etc/certforge/certs/mixed.pem"
+# profile = "shortlived"
+# renew_before_days = 3
+# key_path = "/etc/certforge/keys/dns-server.key"
+# cert_path = "/etc/certforge/certs/dns-server.pem"
 #
 # # Simple certificate using default_solver
 # [[certificate]]

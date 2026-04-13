@@ -123,6 +123,11 @@ pub struct CertificateConfig {
 
     pub cert_path: PathBuf,
 
+    /// ACME profile to use for the order.
+    /// Some providers require a specific profile for certain certificate types
+    /// (e.g., Let's Encrypt requires "shortlived" for IP address certificates).
+    pub profile: Option<String>,
+
     #[serde(default = "default_renew_before_days")]
     pub renew_before_days: u32,
 
@@ -493,6 +498,7 @@ name = "mixed"
 domains = ["example.com", "203.0.113.1"]
 key_path = "/etc/certforge/keys/mixed.key"
 cert_path = "/etc/certforge/certs/mixed.pem"
+profile = "shortlived"
 solvers = ["dns", "http"]
 "#;
 
@@ -640,6 +646,7 @@ name = "ip"
 domains = ["203.0.113.1"]
 key_path = "/etc/certforge/keys/ip.key"
 cert_path = "/etc/certforge/certs/ip.pem"
+profile = "shortlived"
 solver = "dns"
 "#;
 

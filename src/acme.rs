@@ -99,7 +99,7 @@ impl AcmeClient {
     }
 
     /// Create a new ACME order for the given domains/IPs.
-    pub async fn create_order(&self, domains: &[String]) -> Result<Order> {
+    pub async fn create_order(&self, domains: &[String], profile: Option<&str>) -> Result<Order> {
         let identifiers: Vec<Identifier> = domains
             .iter()
             .map(|d| {
@@ -111,10 +111,12 @@ impl AcmeClient {
             })
             .collect();
 
-        let order = self
-            .account
-            .new_order(&NewOrder::new(&identifiers))
-            .await?;
+        let mut new_order = NewOrder::new(&identifiers);
+        if let Some(profile) = profile {
+            new_order = new_order.profile(profile);
+        }
+
+        let order = self.account.new_order(&new_order).await?;
 
         Ok(order)
     }

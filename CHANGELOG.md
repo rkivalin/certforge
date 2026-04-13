@@ -6,6 +6,7 @@
 
 - Support for HTTP-01 and TLS-ALPN-01 challenge solvers (standalone server + webroot modes)
 - IP address certificates (IPv4 and IPv6 SANs)
+- ACME profile selection per certificate (e.g., `shortlived` for IP certs on Let's Encrypt)
 - Per-domain solver assignment via `solvers = [...]` or single `solver = "..."`
 - Named DNS client connections reusable by solvers and DANE blocks
 

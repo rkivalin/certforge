@@ -193,7 +193,7 @@ async fn renew_certificate(
 
     // Create ACME order
     tracing::debug!(name = %cert_config.name, domains = ?cert_config.domains, "creating ACME order");
-    let mut order = acme.create_order(&cert_config.domains).await?;
+    let mut order = acme.create_order(&cert_config.domains, cert_config.profile.as_deref()).await?;
 
     // Collect challenges
     let challenges = AcmeClient::collect_challenges(&mut order, &desired_types).await?;

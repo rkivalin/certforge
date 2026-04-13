@@ -170,14 +170,20 @@ name = "web"
 domains = ["example.com", "www.example.com"]
 solver = "dns"
 
-# Per-domain solver (e.g., mixed domain + IP certificate)
+# IP address certificate (requires shortlived profile, ~6 day validity)
 [[certificate]]
 name = "dns-server"
 domains = ["dns.example.com", "203.0.113.1", "2001:db8::1"]
 solvers = ["dns", "http", "http"]
+profile = "shortlived"
+renew_before_days = 3
 ```
 
 If neither `solver` nor `solvers` is set, the global `default_solver` is used.
+
+### ACME profiles
+
+Some ACME providers require a specific profile for certain certificate types. Set `profile` on a certificate to select one. For example, Let's Encrypt requires the `shortlived` profile for IP address certificates (see [Let's Encrypt profiles](https://letsencrypt.org/docs/profiles/)).
 
 ### Credential storage
 
