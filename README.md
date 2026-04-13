@@ -125,7 +125,7 @@ server = "ns1.example.com"
 zone = "example.com"
 tsig_key_path = "/etc/certforge/tsig.key"
 tsig_key_name = "certforge."
-tsig_algorithm = "hmac-sha256"   # or hmac-sha512
+tsig_algorithm = "hmac-sha256"   # hmac-sha256, hmac-sha384, or hmac-sha512
 ```
 
 ### Challenge solvers
@@ -230,6 +230,12 @@ systemctl enable --now certforge.timer
 ```
 
 For encrypted credentials, add `LoadCredentialEncrypted=` directives to service units that need access to TLS keys. Run `certforge init` to see the required directives.
+
+## Known limitations
+
+- **TSIG HMAC-SHA-512**: BIND 9.18+ truncates HMAC-SHA-512 MACs by default, and the underlying DNS library (hickory-dns) does not support verifying truncated HMACs. Use `hmac-sha256` instead.
+- RSA key types not yet supported (ECDSA only).
+- `dane-check` shows expected TLSA records but does not query DNS to verify.
 
 ## License
 

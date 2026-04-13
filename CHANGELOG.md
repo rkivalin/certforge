@@ -11,6 +11,12 @@
 
 ### Fixes
 
+- Add HMAC-SHA-384 TSIG algorithm support
+
+### Known limitations
+
+- TSIG with HMAC-SHA-512 may fail with BIND 9.18+ which truncates MACs by default. Use HMAC-SHA-256 as a workaround (hickory-dns does not support truncated HMAC verification).
+
 ### Changes
 
 - **Breaking**: Configuration format overhauled

@@ -26,6 +26,7 @@ pub async fn load_tsig_signer(
 
     let algorithm = match dns_config.tsig_algorithm {
         config::TsigAlgorithm::HmacSha256 => TsigAlgorithm::HmacSha256,
+        config::TsigAlgorithm::HmacSha384 => TsigAlgorithm::HmacSha384,
         config::TsigAlgorithm::HmacSha512 => TsigAlgorithm::HmacSha512,
     };
 

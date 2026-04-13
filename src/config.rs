@@ -62,6 +62,7 @@ pub struct DnsClientConfig {
 #[serde(rename_all = "kebab-case")]
 pub enum TsigAlgorithm {
     HmacSha256,
+    HmacSha384,
     HmacSha512,
 }
 
