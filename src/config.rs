@@ -87,6 +87,7 @@ fn default_dns_protocol() -> DnsProtocol {
 /// Challenge solver configuration, tagged by type.
 #[derive(Debug, Deserialize)]
 #[serde(tag = "type")]
+#[allow(dead_code)]
 pub enum SolverConfig {
     #[serde(rename = "dns-01")]
     Dns01 {

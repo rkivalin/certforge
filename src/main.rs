@@ -9,6 +9,7 @@ mod error;
 mod hooks;
 mod keys;
 mod renew;
+mod solver;
 mod state;
 
 use clap::Parser;

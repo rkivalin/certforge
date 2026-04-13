@@ -51,5 +51,8 @@ chrono = { version = "0.4", default-features = false, features = ["clock", "serd
 # State persistence
 serde_json = "1"
 
+# Trait async support
+async-trait = "0.1"
+
 # systemd D-Bus
 zbus = "5"

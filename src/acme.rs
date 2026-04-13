@@ -1,3 +1,4 @@
+use std::net::IpAddr;
 use std::time::Duration;
 
 use instant_acme::{
@@ -9,23 +10,26 @@ use crate::config::AcmeConfig;
 use crate::credentials;
 use crate::error::{Error, Result};
 
-/// ACME client wrapping instant-acme with credential management.
 pub struct AcmeClient {
     account: Account,
 }
 
-/// Information about a pending DNS-01 challenge.
-pub struct DnsChallenge {
-    /// The domain being validated
-    pub domain: String,
-    /// The full DNS name for the TXT record: _acme-challenge.<domain>
-    pub txt_name: String,
-    /// The TXT record value (base64url-encoded SHA-256 of key authorization)
-    pub txt_value: String,
+/// Generic challenge information for any challenge type.
+#[allow(dead_code)]
+pub struct ChallengeInfo {
+    /// The identifier being validated (domain name or IP address).
+    pub identifier: String,
+    /// The challenge type that was selected.
+    pub challenge_type: ChallengeType,
+    /// The challenge token.
+    pub token: String,
+    /// The full key authorization string.
+    pub key_authorization: String,
+    /// The DNS TXT record value (base64url(sha256(key_auth))). Only meaningful for DNS-01.
+    pub dns_value: String,
 }
 
 impl AcmeClient {
-    /// Load or create an ACME account.
     pub async fn new(config: &AcmeConfig) -> Result<Self> {
         let cred_data = credentials::load_secret(
             config.account_key_credential.as_deref(),
@@ -94,16 +98,17 @@ impl AcmeClient {
         }
     }
 
-    /// Create a new certificate order, extract DNS-01 challenge info, and set challenges ready.
-    ///
-    /// The caller should publish DNS TXT records for the returned challenges BEFORE calling
-    /// this method. This method collects challenge info, publishes DNS, then sets challenges ready.
-    ///
-    /// Returns the order and challenge info needed for DNS TXT records.
-    pub async fn create_order(&self, domains: &[String]) -> Result<(Order, Vec<DnsChallenge>)> {
+    /// Create a new ACME order for the given domains/IPs.
+    pub async fn create_order(&self, domains: &[String]) -> Result<Order> {
         let identifiers: Vec<Identifier> = domains
             .iter()
-            .map(|d| Identifier::Dns(d.clone()))
+            .map(|d| {
+                if let Ok(ip) = d.parse::<IpAddr>() {
+                    Identifier::Ip(ip)
+                } else {
+                    Identifier::Dns(d.clone())
+                }
+            })
             .collect();
 
         let order = self
@@ -111,51 +116,77 @@ impl AcmeClient {
             .new_order(&NewOrder::new(&identifiers))
             .await?;
 
-        Ok((order, Vec::new()))
+        Ok(order)
     }
 
-    /// Collect DNS-01 challenge info from an order's authorizations.
-    pub async fn collect_challenges(order: &mut Order) -> Result<Vec<DnsChallenge>> {
+    /// Collect challenge info from an order, selecting the desired challenge type per identifier.
+    ///
+    /// `desired_types` maps each identifier to the challenge type to use.
+    /// The order of identifiers matches the order from `create_order`.
+    pub async fn collect_challenges(
+        order: &mut Order,
+        desired_types: &[(String, ChallengeType)],
+    ) -> Result<Vec<ChallengeInfo>> {
         let mut challenges = Vec::new();
 
         let mut auths = order.authorizations();
         while let Some(auth_result) = auths.next().await {
             let mut auth = auth_result?;
+            let identifier = auth.identifier().to_string();
 
-            let domain = auth.identifier().to_string();
+            // Find which challenge type was requested for this identifier
+            let desired = desired_types
+                .iter()
+                .find(|(id, _)| *id == identifier)
+                .map(|(_, ct)| ct.clone())
+                .unwrap_or(ChallengeType::Dns01);
 
-            let dns01 = auth.challenge(ChallengeType::Dns01).ok_or_else(|| {
+            let challenge = auth.challenge(desired.clone()).ok_or_else(|| {
                 Error::Acme(instant_acme::Error::Other(
-                    format!("no DNS-01 challenge for {domain}").into(),
+                    format!("no {desired:?} challenge for {identifier}").into(),
                 ))
             })?;
 
-            let key_auth = dns01.key_authorization();
-            let txt_value = key_auth.dns_value();
+            let key_auth = challenge.key_authorization();
+            let token = challenge.token.clone();
+            let dns_value = key_auth.dns_value();
+            let key_authorization = key_auth.as_str().to_string();
 
-            challenges.push(DnsChallenge {
-                txt_name: format!("_acme-challenge.{domain}"),
-                domain,
-                txt_value,
+            challenges.push(ChallengeInfo {
+                identifier,
+                challenge_type: desired,
+                token,
+                key_authorization,
+                dns_value,
             });
         }
 
         Ok(challenges)
     }
 
-    /// Set all DNS-01 challenges as ready (call after publishing TXT records).
-    pub async fn set_challenges_ready(order: &mut Order) -> Result<()> {
+    /// Set all challenges as ready.
+    pub async fn set_challenges_ready(
+        order: &mut Order,
+        desired_types: &[(String, ChallengeType)],
+    ) -> Result<()> {
         let mut auths = order.authorizations();
         while let Some(auth_result) = auths.next().await {
             let mut auth = auth_result?;
-            if let Some(mut dns01) = auth.challenge(ChallengeType::Dns01) {
-                dns01.set_ready().await?;
+            let identifier = auth.identifier().to_string();
+
+            let desired = desired_types
+                .iter()
+                .find(|(id, _)| *id == identifier)
+                .map(|(_, ct)| ct.clone())
+                .unwrap_or(ChallengeType::Dns01);
+
+            if let Some(mut ch) = auth.challenge(desired) {
+                ch.set_ready().await?;
             }
         }
         Ok(())
     }
 
-    /// Wait for the order to become ready, then finalize with a CSR.
     pub async fn finalize_order(order: &mut Order, csr_der: &[u8]) -> Result<()> {
         let mut retries = 20;
         loop {
@@ -184,7 +215,6 @@ impl AcmeClient {
         Ok(())
     }
 
-    /// Wait for the certificate to be available and download it.
     pub async fn download_certificate(order: &mut Order) -> Result<String> {
         let mut retries = 20;
         loop {
