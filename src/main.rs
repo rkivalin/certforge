@@ -227,7 +227,7 @@ fn print_init_commands(config: &config::Config) {
 
     if let Some(path) = &config.acme.account_key_credential {
         println!(
-            "# ACME account key (will be auto-generated if not present)\nsystemd-creds encrypt --name=acme-account-key - {}\n",
+            "# ACME account key (will be auto-generated if not present)\nsystemd-creds encrypt - {}\n",
             path.display()
         );
     }
@@ -235,9 +235,8 @@ fn print_init_commands(config: &config::Config) {
     for (name, dns) in &config.dns {
         if let Some(path) = &dns.tsig_key_credential {
             println!(
-                "# DNS TSIG key for '{name}' (zones: {:?})\nsystemd-creds encrypt --name={} - {}\n",
+                "# DNS TSIG key for '{name}' (zones: {:?})\nsystemd-creds encrypt - {}\n",
                 dns.all_zones(),
-                dns.tsig_key_name,
                 path.display()
             );
         }
@@ -246,8 +245,7 @@ fn print_init_commands(config: &config::Config) {
     for cert in &config.certificates {
         if let Some(path) = &cert.key_credential {
             println!(
-                "# TLS private key for certificate '{}'\nsystemd-creds encrypt --name={}-tls-key - {}\n",
-                cert.name,
+                "# TLS private key for certificate '{}'\nsystemd-creds encrypt - {}\n",
                 cert.name,
                 path.display()
             );

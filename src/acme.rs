@@ -74,7 +74,7 @@ impl AcmeClient {
                     .map_err(|e| Error::Config(format!("failed to serialize credentials: {e}")))?;
 
                 if let Some(cred_path) = &config.account_key_credential {
-                    credentials::encrypt_credential("acme-account-key", &creds_json, cred_path)
+                    credentials::encrypt_credential(&creds_json, cred_path)
                         .await?;
                     tracing::info!(path = %cred_path.display(), "saved account credentials (encrypted)");
                 } else if let Some(file_path) = &config.account_key_path {

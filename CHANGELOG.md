@@ -9,6 +9,8 @@
 
 ### Fixes
 
+- Don't embed credential name in `systemd-creds encrypt`, allowing services to load credentials under any name
+
 ### Changes
 
 ## 0.4.0 (2026-04-13)

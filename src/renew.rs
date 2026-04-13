@@ -343,8 +343,7 @@ async fn save_key(key: &CertKeyPair, cert_config: &CertificateConfig) -> Result<
     let pem = key.to_pem();
 
     if let Some(cred_path) = &cert_config.key_credential {
-        let cred_name = format!("{}-tls-key", cert_config.name);
-        credentials::encrypt_credential(&cred_name, pem.as_bytes(), cred_path).await?;
+        credentials::encrypt_credential(pem.as_bytes(), cred_path).await?;
         tracing::info!(path = %cred_path.display(), "saved private key (encrypted)");
     } else if let Some(key_path) = &cert_config.key_path {
         if let Some(parent) = key_path.parent() {

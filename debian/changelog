@@ -1,6 +1,8 @@
 certforge (0.5.0-1) unstable; urgency=low
 
-  *
+  * Support multiple zones per DNS client with automatic zone matching
+  * Config validation for domain/DANE zone matching
+  * Don't bind systemd-creds to a specific credential name
 
  -- Roman Kivalin <roman@shl.dev>  Sun, 13 Apr 2026 22:00:00 +0000
 

@@ -45,15 +45,15 @@ async fn decrypt_credential(path: &Path) -> Result<Vec<u8>> {
 
 /// Encrypt data and write it to an encrypted credential file.
 ///
-/// Uses `systemd-creds encrypt --name=<name> - <path>`.
-pub async fn encrypt_credential(name: &str, data: &[u8], path: &Path) -> Result<()> {
+/// Credentials are not bound to a specific name, allowing services to
+/// load them under any credential name via LoadCredentialEncrypted=.
+pub async fn encrypt_credential(data: &[u8], path: &Path) -> Result<()> {
     if let Some(parent) = path.parent() {
         std::fs::create_dir_all(parent)?;
     }
 
     let mut child = Command::new("systemd-creds")
         .arg("encrypt")
-        .arg(format!("--name={name}"))
         .arg("-")
         .arg(path)
         .stdin(std::process::Stdio::piped())
