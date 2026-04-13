@@ -1,2 +1,4 @@
 /target
 /testing
+/pkg
+certforge-*.pkg.tar.zst

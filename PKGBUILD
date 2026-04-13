@@ -7,40 +7,38 @@ arch=('x86_64' 'aarch64')
 url='https://github.com/rkivalin/certforge'
 license=('MIT')
 depends=('systemd-libs')
-makedepends=('cargo')
+makedepends=('rustup')
 backup=('etc/certforge/config.toml')
-source=("$pkgname-$pkgver.tar.gz")
-sha256sums=('SKIP')
+options=(!lto)
 
 prepare() {
-  cd "$pkgname-$pkgver"
+  cd "$startdir"
   export RUSTUP_TOOLCHAIN=stable
   cargo fetch --locked --target "$( rustc -vV | sed -n 's/host: //p' )"
 }
 
 build() {
-  cd "$pkgname-$pkgver"
+  cd "$startdir"
   export RUSTUP_TOOLCHAIN=stable
   export CARGO_TARGET_DIR=target
   cargo build --frozen --release
 }
 
 check() {
-  cd "$pkgname-$pkgver"
+  cd "$startdir"
   export RUSTUP_TOOLCHAIN=stable
   export CARGO_TARGET_DIR=target
   cargo test --frozen
 }
 
 package() {
-  cd "$pkgname-$pkgver"
+  cd "$startdir"
 
   install -Dm755 "target/release/$pkgname" "$pkgdir/usr/bin/$pkgname"
-
   install -Dm644 examples/certforge.service "$pkgdir/usr/lib/systemd/system/certforge.service"
   install -Dm644 examples/certforge.timer "$pkgdir/usr/lib/systemd/system/certforge.timer"
-
   install -Dm644 examples/config.toml "$pkgdir/etc/certforge/config.toml"
+  install -Dm644 LICENSE "$pkgdir/usr/share/licenses/$pkgname/LICENSE"
 
   install -dm750 "$pkgdir/etc/certforge/certs"
   install -dm700 "$pkgdir/var/lib/certforge"

@@ -87,25 +87,21 @@ jobs:
           url='https://github.com/rkivalin/certforge'
           license=('MIT')
           depends=('systemd-libs')
-          source=("certforge-amd64.tar.gz"
-                  "certforge.service"
-                  "certforge.timer"
-                  "config.toml")
-          sha256sums=('SKIP' 'SKIP' 'SKIP' 'SKIP')
+          backup=('etc/certforge/config.toml')
+          source=("certforge-amd64.tar.gz")
+          sha256sums=('SKIP')
 
           package() {
             install -Dm755 "$srcdir/certforge" "$pkgdir/usr/bin/certforge"
-            install -Dm644 "$srcdir/certforge.service" "$pkgdir/usr/lib/systemd/system/certforge.service"
-            install -Dm644 "$srcdir/certforge.timer" "$pkgdir/usr/lib/systemd/system/certforge.timer"
-            install -Dm644 "$srcdir/config.toml" "$pkgdir/etc/certforge/config.toml"
+            install -Dm644 "$startdir/examples/certforge.service" "$pkgdir/usr/lib/systemd/system/certforge.service"
+            install -Dm644 "$startdir/examples/certforge.timer" "$pkgdir/usr/lib/systemd/system/certforge.timer"
+            install -Dm644 "$startdir/examples/config.toml" "$pkgdir/etc/certforge/config.toml"
+            install -Dm644 "$startdir/LICENSE" "$pkgdir/usr/share/licenses/$pkgname/LICENSE"
             install -dm750 "$pkgdir/etc/certforge/certs"
             install -dm700 "$pkgdir/var/lib/certforge"
           }
           PKGEOF
           sed -i "s/VERSION_PLACEHOLDER/$VERSION/" PKGBUILD
-
-          # Place source files where makepkg expects them
-          cp examples/certforge.service examples/certforge.timer examples/config.toml .
 
           useradd -m builder
           chown -R builder:builder .

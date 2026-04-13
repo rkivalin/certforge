@@ -13,6 +13,7 @@
 ### Fixes
 
 - Add HMAC-SHA-384 TSIG algorithm support
+- Fix PKGBUILD to build from local repo checkout with `options=(!lto)` for Arch compatibility
 
 ### Known limitations
 
