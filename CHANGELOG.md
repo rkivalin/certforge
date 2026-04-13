@@ -10,6 +10,7 @@
 ### Fixes
 
 - Don't embed credential name in `systemd-creds encrypt`, allowing services to load credentials under any name
+- Fix wildcard certificate DNS-01 challenges: `*.example.com` now correctly uses `_acme-challenge.example.com`
 
 ### Changes
 

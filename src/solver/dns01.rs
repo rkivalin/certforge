@@ -16,6 +16,12 @@ impl Dns01Solver {
         Self { dns_config }
     }
 
+    /// Strip wildcard prefix for DNS-01 challenge name.
+    /// Per RFC 8555 §8.4, the challenge for *.example.com uses _acme-challenge.example.com.
+    fn base_domain(identifier: &str) -> &str {
+        identifier.strip_prefix("*.").unwrap_or(identifier)
+    }
+
     fn resolve_zone(&self, txt_name: &str) -> Result<String> {
         self.dns_config
             .find_zone(txt_name)
@@ -32,7 +38,7 @@ impl Dns01Solver {
 #[async_trait::async_trait]
 impl super::Solver for Dns01Solver {
     async fn present(&self, challenge: &ChallengeInfo) -> Result<()> {
-        let txt_name = format!("_acme-challenge.{}", challenge.identifier);
+        let txt_name = format!("_acme-challenge.{}", Self::base_domain(&challenge.identifier));
         let zone_str = self.resolve_zone(&txt_name)?;
 
         tracing::debug!(
@@ -55,7 +61,7 @@ impl super::Solver for Dns01Solver {
     }
 
     async fn cleanup(&self, challenge: &ChallengeInfo) -> Result<()> {
-        let txt_name = format!("_acme-challenge.{}", challenge.identifier);
+        let txt_name = format!("_acme-challenge.{}", Self::base_domain(&challenge.identifier));
         let zone_str = self.resolve_zone(&txt_name)?;
 
         tracing::debug!(

@@ -436,7 +436,8 @@ impl Config {
                     // DNS-01: verify domain matches a zone in the DNS client
                     if let Some(SolverConfig::Dns01 { dns: dns_name }) = self.solver.get(name)
                         && let Some(dns_config) = self.dns.get(dns_name.as_str()) {
-                            let challenge_name = format!("_acme-challenge.{domain}");
+                            let base = domain.strip_prefix("*.").unwrap_or(domain);
+                            let challenge_name = format!("_acme-challenge.{base}");
                             if dns_config.find_zone(&challenge_name).is_none() {
                                 return Err(Error::Config(format!(
                                     "certificate {}: domain '{domain}' does not match any zone in dns.{dns_name} ({:?})",
