@@ -1,4 +1,6 @@
 pub mod dns01;
+pub mod http01;
+pub mod tls_alpn01;
 
 use crate::acme::ChallengeInfo;
 use crate::error::Result;

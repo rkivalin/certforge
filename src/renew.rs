@@ -14,6 +14,8 @@ use crate::error::{Error, Result};
 use crate::hooks;
 use crate::keys::CertKeyPair;
 use crate::solver::dns01::Dns01Solver;
+use crate::solver::http01::{Http01StandaloneSolver, Http01WebrootSolver};
+use crate::solver::tls_alpn01::TlsAlpn01Solver;
 use crate::solver::Solver;
 use crate::state::{PendingRotation, State};
 
@@ -31,15 +33,19 @@ fn build_solvers(config: &Config, solver_names: &[&str]) -> Result<HashMap<Strin
                 let dns_config = config.dns_client(dns)?;
                 Box::new(Dns01Solver::new(dns_config.clone()))
             }
-            SolverConfig::Http01 { .. } => {
-                return Err(Error::Config(format!(
-                    "solver '{name}': HTTP-01 not yet implemented"
-                )));
+            SolverConfig::Http01 { listen, webroot } => {
+                if let Some(webroot) = webroot {
+                    Box::new(Http01WebrootSolver::new(webroot.clone()))
+                } else if let Some(listen) = listen {
+                    Box::new(Http01StandaloneSolver::new(*listen))
+                } else {
+                    return Err(Error::Config(format!(
+                        "solver '{name}': HTTP-01 requires either listen or webroot"
+                    )));
+                }
             }
-            SolverConfig::TlsAlpn01 { .. } => {
-                return Err(Error::Config(format!(
-                    "solver '{name}': TLS-ALPN-01 not yet implemented"
-                )));
+            SolverConfig::TlsAlpn01 { listen } => {
+                Box::new(TlsAlpn01Solver::new(*listen))
             }
         };
         solvers.insert(name.to_string(), solver);

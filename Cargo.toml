@@ -51,6 +51,15 @@ chrono = { version = "0.4", default-features = false, features = ["clock", "serd
 # State persistence
 serde_json = "1"
 
+# HTTP server (for HTTP-01 solver)
+hyper = { version = "1", features = ["http1", "server"] }
+hyper-util = { version = "0.1", features = ["tokio"] }
+http-body-util = "0.1"
+
+# TLS (for TLS-ALPN-01 solver)
+tokio-rustls = { version = "0.26", default-features = false, features = ["ring"] }
+rustls = { version = "0.23", default-features = false, features = ["ring", "std"] }
+
 # Trait async support
 async-trait = "0.1"
 
