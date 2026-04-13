@@ -1,3 +1,9 @@
+certforge (0.5.0-1) unstable; urgency=low
+
+  *
+
+ -- Roman Kivalin <roman@shl.dev>  Sun, 13 Apr 2026 22:00:00 +0000
+
 certforge (0.4.0-1) unstable; urgency=low
 
   * Breaking: configuration format overhauled (named DNS clients, solvers, per-domain solver assignment)

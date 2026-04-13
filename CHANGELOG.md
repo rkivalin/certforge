@@ -1,6 +1,14 @@
 # Changelog
 
-## 0.4.0 (unreleased)
+## 0.5.0 (unreleased)
+
+### Features
+
+### Fixes
+
+### Changes
+
+## 0.4.0 (2026-04-13)
 
 ### Features
 
