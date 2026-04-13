@@ -14,7 +14,7 @@ use tokio::task::JoinHandle;
 use hickory_client::{ClientError, ClientErrorKind};
 use hickory_proto::ProtoErrorKind;
 
-use crate::config::{DnsProtocol, DnsServerConfig};
+use crate::config::{DnsProtocol, DnsClientConfig};
 use crate::dns::tlsa::TlsaRecord;
 use crate::error::{Error, Result};
 
@@ -77,7 +77,7 @@ pub struct DnsUpdater {
 impl DnsUpdater {
     /// Connect to a DNS server with TSIG authentication.
     pub async fn connect(
-        config: &DnsServerConfig,
+        config: &DnsClientConfig,
         signer: Arc<dyn MessageFinalizer>,
     ) -> Result<Self> {
         let addr_str = format!("{}:{}", config.server, config.port);

@@ -4,7 +4,7 @@ use hickory_proto::rr::Name;
 
 use crate::acme::{AcmeClient, DnsChallenge};
 use crate::certs::CertInfo;
-use crate::config::{CertificateConfig, Config, DaneSelector};
+use crate::config::{CertificateConfig, Config, DaneSelector, DnsClientConfig, SolverConfig};
 use crate::credentials;
 use crate::dane;
 use crate::dns::tsig;
@@ -41,7 +41,6 @@ pub async fn run(
                     tracing::info!(name = %cert_config.name, "certificate renewed successfully");
                     state_dirty = true;
                 }
-                // "does not need renewal" is logged inside renew_certificate with days_remaining
             }
             Err(e) => {
                 tracing::error!(name = %cert_config.name, error = %e, "certificate renewal failed");
@@ -53,6 +52,31 @@ pub async fn run(
         state.save(state_dir)?;
     }
     Ok(())
+}
+
+/// Resolve the DNS client config for a solver assigned to a domain.
+fn resolve_dns_config_for_domain<'a>(
+    config: &'a Config,
+    cert_config: &CertificateConfig,
+    domain_index: usize,
+) -> Result<&'a DnsClientConfig> {
+    let solver_name = cert_config
+        .solver_for_domain(domain_index, config.default_solver.as_deref())
+        .ok_or_else(|| {
+            Error::Config(format!(
+                "certificate {}: no solver configured for domain '{}'",
+                cert_config.name, cert_config.domains[domain_index]
+            ))
+        })?;
+
+    let solver = config.solver_config(solver_name)?;
+    match solver {
+        SolverConfig::Dns01 { dns } => config.dns_client(dns),
+        _ => Err(Error::Config(format!(
+            "certificate {}: solver '{solver_name}' is not DNS-01 (HTTP-01 and TLS-ALPN-01 not yet implemented)",
+            cert_config.name
+        ))),
+    }
 }
 
 async fn renew_certificate(
@@ -71,7 +95,6 @@ async fn renew_certificate(
                 name = %cert_config.name,
                 "pending key rotation TTL expired, completing renewal"
             );
-            // Continue with renewal using the pending key
         } else {
             tracing::info!(
                 name = %cert_config.name,
@@ -99,16 +122,13 @@ async fn renew_certificate(
                 "certificate expiring soon, renewing"
             );
         }
-        // If cert doesn't exist or can't be parsed, proceed with issuance
 
     // Determine key pair
     let key = if let Some(pending) = state.pending_rotations.remove(&cert_config.name) {
-        // Use the pending key from pre-publication
         let key_data = std::fs::read(&pending.pending_key_path)
             .map_err(|e| Error::Key(format!("failed to read pending key: {e}")))?;
         CertKeyPair::from_pem_or_der(&key_data, &cert_config.key_type)?
     } else if cert_config.rotate_key {
-        // Check if DANE pre-publication is needed
         let needs_pre_publish = cert_config
             .dane
             .iter()
@@ -117,11 +137,9 @@ async fn renew_certificate(
         let new_key = CertKeyPair::generate(&cert_config.key_type)?;
 
         if needs_pre_publish {
-            // Pre-publish TLSA with new key, defer renewal
             tracing::info!(name = %cert_config.name, "pre-publishing TLSA for key rotation");
 
             if !dry_run {
-                // Save pending key
                 let pending_dir = state_dir.join("pending");
                 std::fs::create_dir_all(&pending_dir)?;
                 let pending_key_path = pending_dir.join(format!("{}.key", cert_config.name));
@@ -136,7 +154,6 @@ async fn renew_certificate(
                     )?;
                 }
 
-                // Publish new TLSA alongside old
                 let max_ttl = pre_publish_dane(config, cert_config, &new_key, dry_run).await?;
 
                 state.pending_rotations.insert(
@@ -159,7 +176,6 @@ async fn renew_certificate(
 
         new_key
     } else {
-        // Load existing key or generate if first time
         match CertKeyPair::load(
             cert_config.key_credential.as_deref(),
             cert_config.key_path.as_deref(),
@@ -199,8 +215,6 @@ async fn renew_certificate(
     let mut params =
         rcgen::CertificateParams::new(cert_config.domains.clone())
             .map_err(|e| Error::Certificate(format!("invalid CSR params: {e}")))?;
-    // Clear the default distinguished name - ACME uses SANs only,
-    // and the default CN "rcgen self signed cert" causes rejection.
     params.distinguished_name = rcgen::DistinguishedName::new();
 
     let csr = params
@@ -222,7 +236,14 @@ async fn renew_certificate(
             txt_value = %challenge.txt_value,
             "publishing DNS-01 challenge TXT record"
         );
-        publish_challenge_txt(config, challenge).await?;
+        // Find which domain index this challenge corresponds to
+        let domain_index = cert_config.domains.iter()
+            .position(|d| d == &challenge.domain)
+            .ok_or_else(|| Error::Config(format!(
+                "challenge domain '{}' not found in certificate domains", challenge.domain
+            )))?;
+        let dns_config = resolve_dns_config_for_domain(config, cert_config, domain_index)?;
+        publish_challenge_txt(dns_config, challenge).await?;
     }
 
     // Run the ACME order flow, ensuring TXT cleanup happens even on failure
@@ -231,11 +252,9 @@ async fn renew_certificate(
         tracing::debug!("waiting 5s for DNS propagation");
         tokio::time::sleep(std::time::Duration::from_secs(5)).await;
 
-        // Tell ACME server challenges are ready
         tracing::debug!(name = %cert_config.name, "setting challenges ready");
         AcmeClient::set_challenges_ready(&mut order).await?;
 
-        // Finalize and download
         tracing::debug!(name = %cert_config.name, "finalizing order");
         AcmeClient::finalize_order(&mut order, csr.der()).await?;
         tracing::debug!(name = %cert_config.name, "downloading certificate");
@@ -245,13 +264,17 @@ async fn renew_certificate(
 
     // Always clean up challenge TXT records
     for challenge in &challenges {
-        if let Err(e) = cleanup_challenge_txt(config, challenge).await {
-            tracing::warn!(
-                domain = %challenge.domain,
-                error = %e,
-                "failed to clean up challenge TXT record"
-            );
-        }
+        let domain_index = cert_config.domains.iter()
+            .position(|d| d == &challenge.domain);
+        if let Some(idx) = domain_index
+            && let Ok(dns_config) = resolve_dns_config_for_domain(config, cert_config, idx)
+                && let Err(e) = cleanup_challenge_txt(dns_config, challenge).await {
+                    tracing::warn!(
+                        domain = %challenge.domain,
+                        error = %e,
+                        "failed to clean up challenge TXT record"
+                    );
+                }
     }
 
     let cert_pem = order_result?;
@@ -271,14 +294,10 @@ async fn renew_certificate(
         let cert_info = CertInfo::from_pem(&cert_pem)?;
         for dane_config in &cert_config.dane {
             let records = dane::compute_tlsa_records(&cert_info, dane_config)?;
-
-            let dns_config = config.dns.resolve_for_zone(&extract_zone_from_tlsa_name(
-                dane_config.names.first().unwrap(),
-            ));
-            let signer = tsig::load_tsig_signer(&dns_config).await?;
-            let mut updater = DnsUpdater::connect(&dns_config, signer).await?;
-
-            dane::publish_tlsa(&mut updater, dane_config, &records).await?;
+            let dns_config = config.dns_client(&dane_config.dns)?;
+            let signer = tsig::load_tsig_signer(dns_config).await?;
+            let mut updater = DnsUpdater::connect(dns_config, signer).await?;
+            dane::publish_tlsa(&mut updater, dns_config, dane_config, &records).await?;
         }
     }
 
@@ -316,36 +335,32 @@ async fn save_key(key: &CertKeyPair, cert_config: &CertificateConfig) -> Result<
     Ok(())
 }
 
-async fn publish_challenge_txt(config: &Config, challenge: &DnsChallenge) -> Result<()> {
-    let zone_str = extract_zone_from_domain(&challenge.domain);
-    let dns_config = config.dns.resolve_for_zone(&zone_str);
+async fn publish_challenge_txt(dns_config: &DnsClientConfig, challenge: &DnsChallenge) -> Result<()> {
     tracing::debug!(
         domain = %challenge.domain,
-        zone = %zone_str,
+        zone = %dns_config.zone,
         server = %dns_config.server,
         txt_name = %challenge.txt_name,
         "publishing challenge TXT via RFC 2136"
     );
-    let signer = tsig::load_tsig_signer(&dns_config).await?;
-    let mut updater = DnsUpdater::connect(&dns_config, signer).await?;
+    let signer = tsig::load_tsig_signer(dns_config).await?;
+    let mut updater = DnsUpdater::connect(dns_config, signer).await?;
 
     let name = Name::from_ascii(&challenge.txt_name)
         .map_err(|e| Error::DnsUpdate(format!("invalid TXT name: {e}")))?;
-    let zone = Name::from_ascii(&zone_str)
+    let zone = Name::from_ascii(&dns_config.zone)
         .map_err(|e| Error::DnsUpdate(format!("invalid zone: {e}")))?;
 
     updater.add_txt_record(&zone, &name, &challenge.txt_value, 60).await
 }
 
-async fn cleanup_challenge_txt(config: &Config, challenge: &DnsChallenge) -> Result<()> {
-    let zone_str = extract_zone_from_domain(&challenge.domain);
-    let dns_config = config.dns.resolve_for_zone(&zone_str);
-    let signer = tsig::load_tsig_signer(&dns_config).await?;
-    let mut updater = DnsUpdater::connect(&dns_config, signer).await?;
+async fn cleanup_challenge_txt(dns_config: &DnsClientConfig, challenge: &DnsChallenge) -> Result<()> {
+    let signer = tsig::load_tsig_signer(dns_config).await?;
+    let mut updater = DnsUpdater::connect(dns_config, signer).await?;
 
     let name = Name::from_ascii(&challenge.txt_name)
         .map_err(|e| Error::DnsUpdate(format!("invalid TXT name: {e}")))?;
-    let zone = Name::from_ascii(&zone_str)
+    let zone = Name::from_ascii(&dns_config.zone)
         .map_err(|e| Error::DnsUpdate(format!("invalid zone: {e}")))?;
 
     updater.delete_txt_record(&zone, &name, &challenge.txt_value).await
@@ -374,36 +389,12 @@ async fn pre_publish_dane(
         let records = dane::compute_tlsa_from_key(new_key, dane_config)?;
         let record = &records[0];
 
-        let dns_config = config.dns.resolve_for_zone(&extract_zone_from_tlsa_name(
-            dane_config.names.first().unwrap(),
-        ));
-        let signer = tsig::load_tsig_signer(&dns_config).await?;
-        let mut updater = DnsUpdater::connect(&dns_config, signer).await?;
+        let dns_config = config.dns_client(&dane_config.dns)?;
+        let signer = tsig::load_tsig_signer(dns_config).await?;
+        let mut updater = DnsUpdater::connect(dns_config, signer).await?;
 
-        dane::add_tlsa(&mut updater, dane_config, record).await?;
+        dane::add_tlsa(&mut updater, dns_config, dane_config, record).await?;
     }
 
     Ok(max_ttl)
-}
-
-/// Extract zone from a domain (heuristic: last two labels).
-fn extract_zone_from_domain(domain: &str) -> String {
-    let parts: Vec<&str> = domain.split('.').collect();
-    if parts.len() >= 2 {
-        parts[parts.len() - 2..].join(".")
-    } else {
-        domain.to_string()
-    }
-}
-
-/// Extract zone from a TLSA name like _25._tcp.mx1.example.com.
-fn extract_zone_from_tlsa_name(name: &str) -> String {
-    let parts: Vec<&str> = name.split('.').collect();
-    // Skip underscore-prefixed parts, then skip hostname, take zone
-    let non_underscore: Vec<&&str> = parts.iter().filter(|p| !p.starts_with('_')).collect();
-    if non_underscore.len() >= 2 {
-        non_underscore[non_underscore.len() - 2..].iter().map(|s| **s).collect::<Vec<&str>>().join(".")
-    } else {
-        name.to_string()
-    }
 }

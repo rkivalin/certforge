@@ -4,9 +4,22 @@
 
 ### Features
 
+- Support for HTTP-01 and TLS-ALPN-01 challenge solvers (standalone server + webroot modes)
+- IP address certificates (IPv4 and IPv6 SANs)
+- Per-domain solver assignment via `solvers = [...]` or single `solver = "..."`
+- Named DNS client connections reusable by solvers and DANE blocks
+
 ### Fixes
 
 ### Changes
+
+- **Breaking**: Configuration format overhauled
+  - `[dns.defaults]` and `[dns.zones.*]` replaced by named `[dns.*]` client configs with explicit `zone` field
+  - New `[solver.*]` blocks define challenge solvers (`dns-01`, `http-01`, `tls-alpn-01`)
+  - Certificates reference solvers by name instead of implicitly using DNS config
+  - DANE blocks require explicit `dns = "..."` reference to a DNS client
+  - Automatic zone detection removed — zones are now explicit in DNS client config
+  - `default_solver` replaces implicit DNS-01 for all domains
 
 ## 0.3.0 (2026-04-12)
 

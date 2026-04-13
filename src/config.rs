@@ -1,13 +1,26 @@
-use serde::Deserialize;
 use std::collections::HashMap;
+use std::net::SocketAddr;
 use std::path::{Path, PathBuf};
+
+use serde::Deserialize;
 
 use crate::error::{Error, Result};
 
 #[derive(Debug, Deserialize)]
 pub struct Config {
     pub acme: AcmeConfig,
-    pub dns: DnsConfig,
+
+    /// Global default solver name for certificates that don't specify one.
+    pub default_solver: Option<String>,
+
+    /// Named DNS client connections, referenced by solvers and DANE blocks.
+    #[serde(default)]
+    pub dns: HashMap<String, DnsClientConfig>,
+
+    /// Named challenge solvers.
+    #[serde(default)]
+    pub solver: HashMap<String, SolverConfig>,
+
     #[serde(rename = "certificate", default)]
     pub certificates: Vec<CertificateConfig>,
 }
@@ -17,9 +30,7 @@ pub struct AcmeConfig {
     #[serde(default = "default_directory_url")]
     pub directory_url: String,
 
-    /// Full path to encrypted credential file for the ACME account key
     pub account_key_credential: Option<PathBuf>,
-    /// Plain file path for the ACME account key (fallback)
     pub account_key_path: Option<PathBuf>,
 
     pub contact: Vec<String>,
@@ -29,20 +40,13 @@ fn default_directory_url() -> String {
     "https://acme-v02.api.letsencrypt.org/directory".to_string()
 }
 
-#[derive(Debug, Deserialize)]
-pub struct DnsConfig {
-    pub defaults: DnsServerConfig,
-    #[serde(default)]
-    pub zones: HashMap<String, DnsZoneOverride>,
-}
-
+/// DNS client connection config, used for both RFC 2136 updates (solvers) and DANE TLSA publication.
 #[derive(Debug, Clone, Deserialize)]
-pub struct DnsServerConfig {
+pub struct DnsClientConfig {
     pub server: String,
+    pub zone: String,
 
-    /// Full path to encrypted credential file for the TSIG key
     pub tsig_key_credential: Option<PathBuf>,
-    /// Plain file path for the TSIG key (fallback)
     pub tsig_key_path: Option<PathBuf>,
 
     pub tsig_key_name: String,
@@ -52,17 +56,6 @@ pub struct DnsServerConfig {
     pub port: u16,
     #[serde(default = "default_dns_protocol")]
     pub protocol: DnsProtocol,
-}
-
-#[derive(Debug, Clone, Deserialize)]
-pub struct DnsZoneOverride {
-    pub server: Option<String>,
-    pub tsig_key_credential: Option<PathBuf>,
-    pub tsig_key_path: Option<PathBuf>,
-    pub tsig_key_name: Option<String>,
-    pub tsig_algorithm: Option<TsigAlgorithm>,
-    pub port: Option<u16>,
-    pub protocol: Option<DnsProtocol>,
 }
 
 #[derive(Debug, Clone, Deserialize, PartialEq, Eq)]
@@ -91,18 +84,39 @@ fn default_dns_protocol() -> DnsProtocol {
     DnsProtocol::Tcp
 }
 
+/// Challenge solver configuration, tagged by type.
+#[derive(Debug, Deserialize)]
+#[serde(tag = "type")]
+pub enum SolverConfig {
+    #[serde(rename = "dns-01")]
+    Dns01 {
+        /// Reference to a [dns.*] client config by name.
+        dns: String,
+    },
+    #[serde(rename = "http-01")]
+    Http01 {
+        /// Address to listen on for standalone HTTP server.
+        listen: Option<SocketAddr>,
+        /// Directory to write challenge tokens for an existing web server.
+        webroot: Option<PathBuf>,
+    },
+    #[serde(rename = "tls-alpn-01")]
+    TlsAlpn01 {
+        /// Address to listen on for the TLS-ALPN server.
+        listen: SocketAddr,
+    },
+}
+
 #[derive(Debug, Deserialize)]
 pub struct CertificateConfig {
     pub name: String,
+    /// Domain names and/or IP addresses for the certificate SANs.
     pub domains: Vec<String>,
 
     #[serde(default = "default_key_type")]
     pub key_type: KeyType,
 
-    /// Full path to encrypted credential file for the private key.
-    /// Services access the same file via LoadCredentialEncrypted= in their units.
     pub key_credential: Option<PathBuf>,
-    /// Plain file path for the private key (fallback for services that can't use credentials)
     pub key_path: Option<PathBuf>,
 
     pub cert_path: PathBuf,
@@ -112,6 +126,11 @@ pub struct CertificateConfig {
 
     #[serde(default)]
     pub rotate_key: bool,
+
+    /// Single solver name for all domains.
+    pub solver: Option<String>,
+    /// Per-domain solver names (must match domains length).
+    pub solvers: Option<Vec<String>>,
 
     #[serde(default)]
     pub dane: Vec<DaneConfig>,
@@ -139,6 +158,9 @@ fn default_renew_before_days() -> u32 {
 
 #[derive(Debug, Deserialize)]
 pub struct DaneConfig {
+    /// Reference to a [dns.*] client config for TLSA record updates.
+    pub dns: String,
+
     #[serde(default = "default_dane_usage")]
     pub usage: DaneUsage,
     #[serde(default = "default_dane_selector")]
@@ -146,13 +168,11 @@ pub struct DaneConfig {
     #[serde(default = "default_dane_matching")]
     pub matching: DaneMatching,
 
-    /// TLSA record DNS names (e.g., _25._tcp.mx1.example.com)
     pub names: Vec<String>,
 
     #[serde(default = "default_dane_ttl")]
     pub ttl: u32,
 
-    /// Pre-publish new TLSA before key rotation to avoid DANE breakage
     #[serde(default)]
     pub pre_publish: bool,
 }
@@ -160,16 +180,12 @@ pub struct DaneConfig {
 #[derive(Debug, Clone, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "lowercase")]
 pub enum DaneUsage {
-    /// PKIX-TA (0)
     #[serde(rename = "pkix-ta")]
     PkixTa,
-    /// PKIX-EE (1)
     #[serde(rename = "pkix-ee")]
     PkixEe,
-    /// DANE-TA (2)
     #[serde(rename = "ta")]
     Ta,
-    /// DANE-EE (3)
     #[serde(rename = "ee")]
     Ee,
 }
@@ -177,20 +193,15 @@ pub enum DaneUsage {
 #[derive(Debug, Clone, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "lowercase")]
 pub enum DaneSelector {
-    /// Full certificate (0)
     Full,
-    /// SubjectPublicKeyInfo (1)
     Spki,
 }
 
 #[derive(Debug, Clone, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "lowercase")]
 pub enum DaneMatching {
-    /// Exact match (0)
     Full,
-    /// SHA-256 (1)
     Sha256,
-    /// SHA-512 (2)
     Sha512,
 }
 
@@ -218,33 +229,16 @@ pub enum HookConfig {
     Command { command: Vec<String> },
 }
 
-impl DnsConfig {
-    /// Resolve DNS server config for a given zone, applying overrides on top of defaults.
-    pub fn resolve_for_zone(&self, zone: &str) -> DnsServerConfig {
-        let Some(ovr) = self.zones.get(zone) else {
-            return self.defaults.clone();
-        };
-
-        DnsServerConfig {
-            server: ovr.server.clone().unwrap_or_else(|| self.defaults.server.clone()),
-            tsig_key_credential: ovr
-                .tsig_key_credential
-                .clone()
-                .or_else(|| self.defaults.tsig_key_credential.clone()),
-            tsig_key_path: ovr
-                .tsig_key_path
-                .clone()
-                .or_else(|| self.defaults.tsig_key_path.clone()),
-            tsig_key_name: ovr
-                .tsig_key_name
-                .clone()
-                .unwrap_or_else(|| self.defaults.tsig_key_name.clone()),
-            tsig_algorithm: ovr
-                .tsig_algorithm
-                .clone()
-                .unwrap_or_else(|| self.defaults.tsig_algorithm.clone()),
-            port: ovr.port.unwrap_or(self.defaults.port),
-            protocol: ovr.protocol.clone().unwrap_or_else(|| self.defaults.protocol.clone()),
+impl CertificateConfig {
+    /// Resolve the solver name for the i-th domain.
+    /// Priority: solvers[i] > solver > default_solver.
+    pub fn solver_for_domain<'a>(&'a self, index: usize, default: Option<&'a str>) -> Option<&'a str> {
+        if let Some(solvers) = &self.solvers {
+            solvers.get(index).map(|s| s.as_str())
+        } else if let Some(solver) = &self.solver {
+            Some(solver.as_str())
+        } else {
+            default
         }
     }
 }
@@ -260,24 +254,81 @@ impl Config {
         Ok(config)
     }
 
+    /// Look up a DNS client config by name.
+    pub fn dns_client(&self, name: &str) -> Result<&DnsClientConfig> {
+        self.dns.get(name).ok_or_else(|| {
+            Error::Config(format!("dns client '{name}' not found"))
+        })
+    }
+
+    /// Look up a solver config by name.
+    pub fn solver_config(&self, name: &str) -> Result<&SolverConfig> {
+        self.solver.get(name).ok_or_else(|| {
+            Error::Config(format!("solver '{name}' not found"))
+        })
+    }
+
+    #[allow(dead_code)]
+    pub fn find_certificate(&self, name: &str) -> Option<&CertificateConfig> {
+        self.certificates.iter().find(|c| c.name == name)
+    }
+
     fn validate(&self) -> Result<()> {
+        // ACME config
         if self.acme.account_key_credential.is_none() && self.acme.account_key_path.is_none() {
             return Err(Error::Config(
                 "acme: either account_key_credential or account_key_path must be set".into(),
             ));
         }
-
         if self.acme.contact.is_empty() {
             return Err(Error::Config("acme: contact must not be empty".into()));
         }
 
-        if self.dns.defaults.tsig_key_credential.is_none()
-            && self.dns.defaults.tsig_key_path.is_none()
-        {
-            return Err(Error::Config(
-                "dns.defaults: either tsig_key_credential or tsig_key_path must be set".into(),
-            ));
+        // Validate default_solver reference
+        if let Some(default) = &self.default_solver
+            && !self.solver.contains_key(default) {
+                return Err(Error::Config(format!(
+                    "default_solver '{default}' not found in [solver.*]"
+                )));
+            }
+
+        // Validate DNS client configs
+        for (name, dns) in &self.dns {
+            if dns.tsig_key_credential.is_none() && dns.tsig_key_path.is_none() {
+                return Err(Error::Config(format!(
+                    "dns.{name}: either tsig_key_credential or tsig_key_path must be set"
+                )));
+            }
         }
+
+        // Validate solver configs
+        for (name, solver) in &self.solver {
+            match solver {
+                SolverConfig::Dns01 { dns } => {
+                    if !self.dns.contains_key(dns) {
+                        return Err(Error::Config(format!(
+                            "solver.{name}: dns client '{dns}' not found in [dns.*]"
+                        )));
+                    }
+                }
+                SolverConfig::Http01 { listen, webroot } => {
+                    if listen.is_none() && webroot.is_none() {
+                        return Err(Error::Config(format!(
+                            "solver.{name}: either listen or webroot must be set"
+                        )));
+                    }
+                    if listen.is_some() && webroot.is_some() {
+                        return Err(Error::Config(format!(
+                            "solver.{name}: listen and webroot are mutually exclusive"
+                        )));
+                    }
+                }
+                SolverConfig::TlsAlpn01 { .. } => {}
+            }
+        }
+
+        // Validate certificates
+        let is_ip = |s: &str| s.parse::<std::net::IpAddr>().is_ok();
 
         for cert in &self.certificates {
             if cert.name.is_empty() {
@@ -296,6 +347,46 @@ impl Config {
                 )));
             }
 
+            // solver and solvers are mutually exclusive
+            if cert.solver.is_some() && cert.solvers.is_some() {
+                return Err(Error::Config(format!(
+                    "certificate {}: solver and solvers are mutually exclusive",
+                    cert.name
+                )));
+            }
+
+            // solvers length must match domains
+            if let Some(solvers) = &cert.solvers
+                && solvers.len() != cert.domains.len() {
+                    return Err(Error::Config(format!(
+                        "certificate {}: solvers length ({}) must match domains length ({})",
+                        cert.name,
+                        solvers.len(),
+                        cert.domains.len()
+                    )));
+                }
+
+            // Validate each domain's solver reference and check DNS-01 not used with IPs
+            for (i, domain) in cert.domains.iter().enumerate() {
+                let solver_name = cert.solver_for_domain(i, self.default_solver.as_deref());
+                if let Some(name) = solver_name {
+                    if !self.solver.contains_key(name) {
+                        return Err(Error::Config(format!(
+                            "certificate {}: solver '{name}' not found in [solver.*]",
+                            cert.name
+                        )));
+                    }
+                    // DNS-01 cannot be used with IP addresses
+                    if is_ip(domain) && matches!(self.solver.get(name), Some(SolverConfig::Dns01 { .. })) {
+                        return Err(Error::Config(format!(
+                            "certificate {}: DNS-01 solver cannot be used with IP address {domain}",
+                            cert.name
+                        )));
+                    }
+                }
+            }
+
+            // Validate DANE blocks
             for dane in &cert.dane {
                 if dane.names.is_empty() {
                     return Err(Error::Config(format!(
@@ -303,28 +394,27 @@ impl Config {
                         cert.name
                     )));
                 }
+                if !self.dns.contains_key(&dane.dns) {
+                    return Err(Error::Config(format!(
+                        "certificate {}: dane dns client '{}' not found in [dns.*]",
+                        cert.name, dane.dns
+                    )));
+                }
             }
 
             for hook in &cert.hooks {
-                match hook {
-                    HookConfig::Command { command } if command.is_empty() => {
-                        return Err(Error::Config(format!(
-                            "certificate {}: command hook has empty command",
-                            cert.name
-                        )));
-                    }
-                    _ => {}
+                if let HookConfig::Command { command } = hook
+                    && command.is_empty()
+                {
+                    return Err(Error::Config(format!(
+                        "certificate {}: command hook has empty command",
+                        cert.name
+                    )));
                 }
             }
         }
 
         Ok(())
-    }
-
-    /// Find a certificate config by name.
-    #[allow(dead_code)]
-    pub fn find_certificate(&self, name: &str) -> Option<&CertificateConfig> {
-        self.certificates.iter().find(|c| c.name == name)
     }
 }
 
@@ -335,22 +425,39 @@ mod tests {
     #[test]
     fn parse_full_config() {
         let toml = r#"
+default_solver = "dns"
+
 [acme]
 directory_url = "https://acme-staging-v02.api.letsencrypt.org/directory"
 account_key_credential = "/etc/credstore.encrypted/acme-account-key"
 contact = ["mailto:admin@example.com"]
 
-[dns.defaults]
+[dns.main]
 server = "ns1.example.com"
+zone = "example.com"
 tsig_key_credential = "/etc/credstore.encrypted/dns-tsig-key"
 tsig_key_name = "certforge-update."
 tsig_algorithm = "hmac-sha256"
 port = 53
 protocol = "tcp"
 
-[dns.zones."example.org"]
+[dns.org]
 server = "ns2.example.org"
+zone = "example.org"
 tsig_key_credential = "/etc/credstore.encrypted/dns-tsig-org"
+tsig_key_name = "certforge-org."
+
+[solver.dns]
+type = "dns-01"
+dns = "main"
+
+[solver.dns-org]
+type = "dns-01"
+dns = "org"
+
+[solver.http]
+type = "http-01"
+listen = "[::]:80"
 
 [[certificate]]
 name = "mail"
@@ -360,8 +467,10 @@ key_credential = "/etc/credstore.encrypted/mail-tls-key"
 cert_path = "/etc/certforge/certs/mail.pem"
 renew_before_days = 30
 rotate_key = false
+solvers = ["dns", "dns-org"]
 
   [[certificate.dane]]
+  dns = "main"
   usage = "ee"
   selector = "spki"
   matching = "sha256"
@@ -376,38 +485,39 @@ rotate_key = false
   [[certificate.hook]]
   type = "command"
   command = ["/usr/local/bin/deploy-cert.sh", "--cert", "mail"]
+
+[[certificate]]
+name = "mixed"
+domains = ["example.com", "203.0.113.1"]
+key_path = "/etc/certforge/keys/mixed.key"
+cert_path = "/etc/certforge/certs/mixed.pem"
+solvers = ["dns", "http"]
 "#;
 
         let config: Config = toml::from_str(toml).unwrap();
-        assert_eq!(config.certificates.len(), 1);
+        config.validate().unwrap();
+
+        assert_eq!(config.dns.len(), 2);
+        assert_eq!(config.solver.len(), 3);
+        assert_eq!(config.certificates.len(), 2);
+
         let cert = &config.certificates[0];
         assert_eq!(cert.name, "mail");
         assert_eq!(cert.domains, vec!["mail.example.com", "mail.example.org"]);
-        assert_eq!(cert.key_type, KeyType::EcdsaP256);
-        assert_eq!(
-            cert.key_credential.as_deref(),
-            Some(Path::new("/etc/credstore.encrypted/mail-tls-key"))
-        );
-        assert!(!cert.rotate_key);
+        assert_eq!(cert.solvers.as_ref().unwrap(), &vec!["dns", "dns-org"]);
         assert_eq!(cert.dane.len(), 1);
+        assert_eq!(cert.dane[0].dns, "main");
         assert_eq!(cert.dane[0].usage, DaneUsage::Ee);
-        assert_eq!(cert.dane[0].selector, DaneSelector::Spki);
-        assert_eq!(cert.dane[0].names.len(), 2);
         assert!(cert.dane[0].pre_publish);
         assert_eq!(cert.hooks.len(), 2);
 
-        // Test zone override resolution
-        let resolved = config.dns.resolve_for_zone("example.org");
-        assert_eq!(resolved.server, "ns2.example.org");
-        assert_eq!(
-            resolved.tsig_key_credential.as_deref(),
-            Some(Path::new("/etc/credstore.encrypted/dns-tsig-org"))
-        );
-        assert_eq!(resolved.tsig_key_name, "certforge-update.");
+        // Solver resolution
+        assert_eq!(cert.solver_for_domain(0, None), Some("dns"));
+        assert_eq!(cert.solver_for_domain(1, None), Some("dns-org"));
 
-        // Test default zone resolution
-        let default_resolved = config.dns.resolve_for_zone("example.com");
-        assert_eq!(default_resolved.server, "ns1.example.com");
+        // Mixed cert
+        let mixed = &config.certificates[1];
+        assert_eq!(mixed.solvers.as_ref().unwrap(), &vec!["dns", "http"]);
     }
 
     #[test]
@@ -417,10 +527,49 @@ rotate_key = false
 account_key_path = "/etc/certforge/account.key"
 contact = ["mailto:admin@example.com"]
 
-[dns.defaults]
+[dns.default]
 server = "ns1.example.com"
+zone = "example.com"
 tsig_key_path = "/etc/certforge/tsig.key"
 tsig_key_name = "certforge."
+
+[solver.dns]
+type = "dns-01"
+dns = "default"
+
+[[certificate]]
+name = "web"
+domains = ["example.com"]
+key_path = "/etc/certforge/keys/web.key"
+cert_path = "/etc/certforge/certs/web.pem"
+solver = "dns"
+"#;
+
+        let config: Config = toml::from_str(toml).unwrap();
+        config.validate().unwrap();
+        assert_eq!(config.certificates[0].key_type, KeyType::EcdsaP256);
+        assert_eq!(config.certificates[0].renew_before_days, 30);
+        assert_eq!(config.certificates[0].solver_for_domain(0, None), Some("dns"));
+    }
+
+    #[test]
+    fn default_solver_fallback() {
+        let toml = r#"
+default_solver = "dns"
+
+[acme]
+account_key_path = "/etc/certforge/account.key"
+contact = ["mailto:admin@example.com"]
+
+[dns.main]
+server = "ns1.example.com"
+zone = "example.com"
+tsig_key_path = "/etc/certforge/tsig.key"
+tsig_key_name = "certforge."
+
+[solver.dns]
+type = "dns-01"
+dns = "main"
 
 [[certificate]]
 name = "web"
@@ -431,10 +580,11 @@ cert_path = "/etc/certforge/certs/web.pem"
 
         let config: Config = toml::from_str(toml).unwrap();
         config.validate().unwrap();
-        assert_eq!(config.certificates[0].key_type, KeyType::EcdsaP256);
-        assert_eq!(config.certificates[0].renew_before_days, 30);
-        assert!(config.certificates[0].dane.is_empty());
-        assert!(config.certificates[0].hooks.is_empty());
+        // No solver/solvers on cert — falls back to default_solver
+        assert_eq!(
+            config.certificates[0].solver_for_domain(0, config.default_solver.as_deref()),
+            Some("dns")
+        );
     }
 
     #[test]
@@ -444,19 +594,85 @@ cert_path = "/etc/certforge/certs/web.pem"
 account_key_path = "/etc/certforge/account.key"
 contact = ["mailto:admin@example.com"]
 
-[dns.defaults]
+[dns.main]
 server = "ns1.example.com"
+zone = "example.com"
 tsig_key_path = "/etc/certforge/tsig.key"
 tsig_key_name = "certforge."
+
+[solver.dns]
+type = "dns-01"
+dns = "main"
 
 [[certificate]]
 name = "web"
 domains = ["example.com"]
 cert_path = "/etc/certforge/certs/web.pem"
+solver = "dns"
 "#;
 
         let config: Config = toml::from_str(toml).unwrap();
         let err = config.validate().unwrap_err();
         assert!(err.to_string().contains("key_credential or key_path"));
+    }
+
+    #[test]
+    fn validation_rejects_dns01_with_ip() {
+        let toml = r#"
+[acme]
+account_key_path = "/etc/certforge/account.key"
+contact = ["mailto:admin@example.com"]
+
+[dns.main]
+server = "ns1.example.com"
+zone = "example.com"
+tsig_key_path = "/etc/certforge/tsig.key"
+tsig_key_name = "certforge."
+
+[solver.dns]
+type = "dns-01"
+dns = "main"
+
+[[certificate]]
+name = "ip"
+domains = ["203.0.113.1"]
+key_path = "/etc/certforge/keys/ip.key"
+cert_path = "/etc/certforge/certs/ip.pem"
+solver = "dns"
+"#;
+
+        let config: Config = toml::from_str(toml).unwrap();
+        let err = config.validate().unwrap_err();
+        assert!(err.to_string().contains("DNS-01 solver cannot be used with IP address"));
+    }
+
+    #[test]
+    fn validation_rejects_solvers_length_mismatch() {
+        let toml = r#"
+[acme]
+account_key_path = "/etc/certforge/account.key"
+contact = ["mailto:admin@example.com"]
+
+[dns.main]
+server = "ns1.example.com"
+zone = "example.com"
+tsig_key_path = "/etc/certforge/tsig.key"
+tsig_key_name = "certforge."
+
+[solver.dns]
+type = "dns-01"
+dns = "main"
+
+[[certificate]]
+name = "web"
+domains = ["a.example.com", "b.example.com"]
+key_path = "/etc/certforge/keys/web.key"
+cert_path = "/etc/certforge/certs/web.pem"
+solvers = ["dns"]
+"#;
+
+        let config: Config = toml::from_str(toml).unwrap();
+        let err = config.validate().unwrap_err();
+        assert!(err.to_string().contains("solvers length"));
     }
 }

@@ -133,7 +133,7 @@ fn print_status(config: &config::Config, name_filter: Option<&str>) {
         }
 
         for (i, dane) in cert_config.dane.iter().enumerate() {
-            println!("  DANE block {}: {:?}/{:?}/{:?}", i, dane.usage, dane.selector, dane.matching);
+            println!("  DANE block {} (dns={}): {:?}/{:?}/{:?}", i, dane.dns, dane.usage, dane.selector, dane.matching);
             println!("    Names: {}", dane.names.join(", "));
             println!("    TTL: {}, Pre-publish: {}", dane.ttl, dane.pre_publish);
         }
@@ -169,18 +169,10 @@ async fn dane_publish(
                 continue;
             }
 
-            let zone_hint = dane_config.names.first().unwrap();
-            let parts: Vec<&str> = zone_hint.split('.').filter(|p| !p.starts_with('_')).collect();
-            let zone_str = if parts.len() >= 2 {
-                parts[parts.len() - 2..].join(".")
-            } else {
-                zone_hint.to_string()
-            };
-
-            let dns_config = config.dns.resolve_for_zone(&zone_str);
-            let signer = dns::tsig::load_tsig_signer(&dns_config).await?;
-            let mut updater = dns::update::DnsUpdater::connect(&dns_config, signer).await?;
-            dane::publish_tlsa(&mut updater, dane_config, &records).await?;
+            let dns_config = config.dns_client(&dane_config.dns)?;
+            let signer = dns::tsig::load_tsig_signer(dns_config).await?;
+            let mut updater = dns::update::DnsUpdater::connect(dns_config, signer).await?;
+            dane::publish_tlsa(&mut updater, dns_config, dane_config, &records).await?;
         }
 
         tracing::info!(name = %cert_config.name, "DANE TLSA records published");
@@ -214,8 +206,6 @@ async fn dane_check(
                     let record = &records[0];
                     for name in &dane_config.names {
                         println!("  {name}: expected TLSA {}", record.to_rdata_string());
-                        // Actual DNS query verification would go here
-                        // For now, just show what we expect
                     }
                 }
                 Err(_) => {
@@ -241,22 +231,12 @@ fn print_init_commands(config: &config::Config) {
         );
     }
 
-    if let Some(path) = &config.dns.defaults.tsig_key_credential {
-        println!(
-            "# DNS TSIG key (default)\nsystemd-creds encrypt --name={} - {}\n",
-            config.dns.defaults.tsig_key_name,
-            path.display()
-        );
-    }
-
-    for (zone, ovr) in &config.dns.zones {
-        if let Some(path) = &ovr.tsig_key_credential {
-            let name = ovr
-                .tsig_key_name
-                .as_deref()
-                .unwrap_or(&config.dns.defaults.tsig_key_name);
+    for (name, dns) in &config.dns {
+        if let Some(path) = &dns.tsig_key_credential {
             println!(
-                "# DNS TSIG key for zone {zone}\nsystemd-creds encrypt --name={name} - {}\n",
+                "# DNS TSIG key for '{name}' (zone {})\nsystemd-creds encrypt --name={} - {}\n",
+                dns.zone,
+                dns.tsig_key_name,
                 path.display()
             );
         }

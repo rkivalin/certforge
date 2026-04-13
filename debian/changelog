@@ -1,6 +1,8 @@
 certforge (0.4.0-1) unstable; urgency=low
 
-  *
+  * Breaking: configuration format overhauled (named DNS clients, solvers, per-domain solver assignment)
+  * Support for HTTP-01 and TLS-ALPN-01 challenge solvers
+  * IP address certificates (IPv4 and IPv6)
 
  -- Roman Kivalin <roman@shl.dev>  Sat, 12 Apr 2026 23:00:00 +0000
 

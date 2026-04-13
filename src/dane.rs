@@ -1,7 +1,7 @@
 use hickory_proto::rr::Name;
 
 use crate::certs::CertInfo;
-use crate::config::DaneConfig;
+use crate::config::{DaneConfig, DnsClientConfig};
 use crate::dns::tlsa::TlsaRecord;
 use crate::dns::update::DnsUpdater;
 use crate::error::{Error, Result};
@@ -12,8 +12,6 @@ pub fn compute_tlsa_records(
     cert: &CertInfo,
     dane: &DaneConfig,
 ) -> Result<Vec<TlsaRecord>> {
-    let mut records = Vec::new();
-
     let record = TlsaRecord::from_certificate(
         &cert.leaf_der,
         &cert.spki_der,
@@ -22,12 +20,7 @@ pub fn compute_tlsa_records(
         &dane.matching,
     )?;
 
-    // Same TLSA rdata for all names in this block
-    for _ in &dane.names {
-        records.push(record.clone());
-    }
-
-    Ok(records)
+    Ok(vec![record; dane.names.len()])
 }
 
 /// Compute TLSA records from a key pair (for pre-publication before cert issuance).
@@ -51,19 +44,20 @@ pub fn compute_tlsa_from_key(
 }
 
 /// Publish TLSA records for a certificate via DNS updates.
+/// Zone is taken from the DnsClientConfig.
 pub async fn publish_tlsa(
     updater: &mut DnsUpdater,
+    dns_config: &DnsClientConfig,
     dane: &DaneConfig,
     records: &[TlsaRecord],
 ) -> Result<()> {
-    // All names in a DANE block share the same TLSA rdata
     let record = &records[0];
+    let zone = Name::from_ascii(&dns_config.zone)
+        .map_err(|e| Error::DnsUpdate(format!("invalid zone '{}': {e}", dns_config.zone)))?;
 
     for name_str in &dane.names {
         let name = Name::from_ascii(name_str)
             .map_err(|e| Error::DnsUpdate(format!("invalid TLSA name {name_str}: {e}")))?;
-
-        let zone = find_zone(&name)?;
 
         updater
             .replace_tlsa_records(&zone, &name, std::slice::from_ref(record), dane.ttl)
@@ -76,14 +70,16 @@ pub async fn publish_tlsa(
 /// Add TLSA records alongside existing ones (for pre-publication).
 pub async fn add_tlsa(
     updater: &mut DnsUpdater,
+    dns_config: &DnsClientConfig,
     dane: &DaneConfig,
     record: &TlsaRecord,
 ) -> Result<()> {
+    let zone = Name::from_ascii(&dns_config.zone)
+        .map_err(|e| Error::DnsUpdate(format!("invalid zone '{}': {e}", dns_config.zone)))?;
+
     for name_str in &dane.names {
         let name = Name::from_ascii(name_str)
             .map_err(|e| Error::DnsUpdate(format!("invalid TLSA name {name_str}: {e}")))?;
-
-        let zone = find_zone(&name)?;
 
         updater
             .add_tlsa_record(&zone, &name, record, dane.ttl)
@@ -91,43 +87,4 @@ pub async fn add_tlsa(
     }
 
     Ok(())
-}
-
-/// Extract the zone (parent domain) from a TLSA name like _25._tcp.mx1.example.com.
-///
-/// Strategy: strip the _port._proto prefix, then take the last two labels as zone.
-/// This is a heuristic; a proper implementation would query for SOA.
-fn find_zone(name: &Name) -> Result<Name> {
-    // TLSA names are like _25._tcp.host.example.com.
-    // We need the zone, which is typically example.com.
-    // Strip underscore-prefixed labels, then take parent as zone.
-    let labels: Vec<&[u8]> = name.iter().collect();
-
-    // Find the first non-underscore label
-    let mut start = 0;
-    for (i, label) in labels.iter().enumerate() {
-        if !label.starts_with(b"_") {
-            start = i;
-            break;
-        }
-    }
-
-    // The zone is everything after the hostname
-    // e.g., for _25._tcp.mx1.example.com, start=2 (mx1), zone = example.com
-    if labels.len() > start + 1 {
-        // Take from start+1 onwards as zone
-        let zone_labels = &labels[start + 1..];
-        let zone_str = zone_labels
-            .iter()
-            .map(|l| String::from_utf8_lossy(l).to_string())
-            .collect::<Vec<_>>()
-            .join(".");
-
-        Name::from_ascii(&zone_str)
-            .map_err(|e| Error::DnsUpdate(format!("invalid zone name: {e}")))
-    } else {
-        Err(Error::DnsUpdate(format!(
-            "cannot determine zone from TLSA name: {name}"
-        )))
-    }
 }

@@ -16,9 +16,13 @@ account_key_path = "/etc/certforge/account.key"
 
 contact = ["mailto:admin@example.com"]
 
-# Default DNS server for RFC 2136 updates
-[dns.defaults]
+# Default solver for all certificates (can be overridden per-certificate)
+# default_solver = "dns"
+
+# DNS client connections — referenced by solvers and DANE blocks
+[dns.main]
 server = "ns1.example.com"
+zone = "example.com"
 # tsig_key_credential = "/etc/credstore.encrypted/dns-tsig-key"
 tsig_key_path = "/etc/certforge/tsig.key"
 tsig_key_name = "certforge."
@@ -26,17 +30,37 @@ tsig_algorithm = "hmac-sha256"
 port = 53
 protocol = "tcp"
 
-# Per-zone DNS overrides (optional)
-# [dns.zones."example.org"]
+# Additional DNS clients for other zones
+# [dns.org]
 # server = "ns2.example.org"
+# zone = "example.org"
 # tsig_key_credential = "/etc/credstore.encrypted/dns-tsig-org"
+# tsig_key_name = "certforge-org."
+
+# Challenge solvers
+[solver.dns]
+type = "dns-01"
+dns = "main"                    # references [dns.main]
+
+# [solver.dns-org]
+# type = "dns-01"
+# dns = "org"
+
+# [solver.http]
+# type = "http-01"
+# listen = "[::]:80"            # standalone HTTP server
+# # OR: webroot = "/var/www/acme"
+
+# [solver.tls]
+# type = "tls-alpn-01"
+# listen = "[::]:443"
 
 # Uncomment and configure certificate blocks below.
 #
 # [[certificate]]
 # name = "mail"
 # domains = ["mail.example.com"]
-# key_type = "ecdsa-p256"
+# solver = "dns"
 # key_credential = "/etc/credstore.encrypted/mail-tls-key"
 # # key_path = "/etc/certforge/keys/mail.key"
 # cert_path = "/etc/certforge/certs/mail.pem"
@@ -45,6 +69,7 @@ protocol = "tcp"
 #
 #   # DANE TLSA for SMTP (port 25)
 #   [[certificate.dane]]
+#   dns = "main"
 #   usage = "ee"
 #   selector = "spki"
 #   matching = "sha256"
@@ -56,18 +81,23 @@ protocol = "tcp"
 #   type = "systemd-reload"
 #   unit = "postfix.service"
 #
+# # Certificate with per-domain solver assignment
+# [[certificate]]
+# name = "mixed"
+# domains = ["example.com", "203.0.113.1", "2001:db8::1"]
+# solvers = ["dns", "http", "http"]
+# key_path = "/etc/certforge/keys/mixed.key"
+# cert_path = "/etc/certforge/certs/mixed.pem"
+#
+# # Simple certificate using default_solver
 # [[certificate]]
 # name = "web"
 # domains = ["example.com", "www.example.com"]
-# key_type = "ecdsa-p256"
 # key_credential = "/etc/credstore.encrypted/web-tls-key"
 # cert_path = "/etc/certforge/certs/web.pem"
-# renew_before_days = 30
 #
 #   [[certificate.dane]]
-#   usage = "ee"
-#   selector = "spki"
-#   matching = "sha256"
+#   dns = "main"
 #   names = ["_443._tcp.example.com", "_443._tcp.www.example.com"]
 #   ttl = 3600
 #

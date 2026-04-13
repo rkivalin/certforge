@@ -12,7 +12,7 @@ use crate::error::{Error, Result};
 
 /// Load a TSIG signer from the DNS server config.
 pub async fn load_tsig_signer(
-    dns_config: &config::DnsServerConfig,
+    dns_config: &config::DnsClientConfig,
 ) -> Result<Arc<dyn MessageFinalizer>> {
     let raw_key = credentials::load_secret(
         dns_config.tsig_key_credential.as_deref(),
