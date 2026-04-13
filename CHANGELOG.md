@@ -1,6 +1,14 @@
 # Changelog
 
-## 0.5.0 (unreleased)
+## 0.6.0 (unreleased)
+
+### Features
+
+### Fixes
+
+### Changes
+
+## 0.5.0 (2026-04-13)
 
 ### Features
 
@@ -11,8 +19,6 @@
 
 - Don't embed credential name in `systemd-creds encrypt`, allowing services to load credentials under any name
 - Fix wildcard certificate DNS-01 challenges: `*.example.com` now correctly uses `_acme-challenge.example.com`
-
-### Changes
 
 ## 0.4.0 (2026-04-13)
 
