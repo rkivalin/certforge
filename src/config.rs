@@ -227,6 +227,17 @@ pub enum KeyType {
     Rsa4096,
 }
 
+impl std::fmt::Display for KeyType {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::EcdsaP256 => write!(f, "ecdsa-p256"),
+            Self::EcdsaP384 => write!(f, "ecdsa-p384"),
+            Self::Rsa2048 => write!(f, "rsa-2048"),
+            Self::Rsa4096 => write!(f, "rsa-4096"),
+        }
+    }
+}
+
 fn default_key_type() -> KeyType {
     KeyType::EcdsaP256
 }
@@ -269,11 +280,31 @@ pub enum DaneUsage {
     Ee,
 }
 
+impl std::fmt::Display for DaneUsage {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::PkixTa => write!(f, "pkix-ta"),
+            Self::PkixEe => write!(f, "pkix-ee"),
+            Self::Ta => write!(f, "ta"),
+            Self::Ee => write!(f, "ee"),
+        }
+    }
+}
+
 #[derive(Debug, Clone, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "lowercase")]
 pub enum DaneSelector {
     Full,
     Spki,
+}
+
+impl std::fmt::Display for DaneSelector {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Full => write!(f, "full"),
+            Self::Spki => write!(f, "spki"),
+        }
+    }
 }
 
 #[derive(Debug, Clone, Deserialize, PartialEq, Eq)]
@@ -282,6 +313,16 @@ pub enum DaneMatching {
     Full,
     Sha256,
     Sha512,
+}
+
+impl std::fmt::Display for DaneMatching {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Full => write!(f, "full"),
+            Self::Sha256 => write!(f, "sha256"),
+            Self::Sha512 => write!(f, "sha512"),
+        }
+    }
 }
 
 fn default_dane_usage() -> DaneUsage {

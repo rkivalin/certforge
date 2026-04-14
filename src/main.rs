@@ -108,7 +108,7 @@ fn print_status(config: &config::Config, name_filter: Option<&str>) {
 
         println!("Certificate: {}", cert_config.name);
         println!("  Domains: {}", cert_config.domains.join(", "));
-        println!("  Key type: {:?}", cert_config.key_type);
+        println!("  Key type: {}", cert_config.key_type);
         println!("  Rotate key: {}", cert_config.rotate_key);
         println!("  Cert path: {}", cert_config.cert_path.display());
 
@@ -131,7 +131,7 @@ fn print_status(config: &config::Config, name_filter: Option<&str>) {
         }
 
         for (i, dane) in cert_config.dane.iter().enumerate() {
-            println!("  DANE block {} (dns={}): {:?}/{:?}/{:?}", i, dane.dns, dane.usage, dane.selector, dane.matching);
+            println!("  DANE block {} (dns={}): {}/{}/{}", i, dane.dns, dane.usage, dane.selector, dane.matching);
             println!("    Names: {}", dane.names.join(", "));
             println!("    TTL: {}, Pre-publish: {}", dane.ttl, dane.pre_publish);
         }

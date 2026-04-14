@@ -127,6 +127,16 @@ tsig_key_name = "certforge."
 tsig_algorithm = "hmac-sha256"   # hmac-sha256, hmac-sha384, or hmac-sha512
 ```
 
+A single DNS client can serve multiple zones. Use `zones` instead of `zone` -- certforge picks the longest matching suffix:
+
+```toml
+[dns.main]
+server = "ns1.example.com"
+zones = ["example.com", "example.org"]
+tsig_key_path = "/etc/certforge/tsig.key"
+tsig_key_name = "certforge."
+```
+
 ### Challenge solvers
 
 Solvers are defined in `[solver.*]` blocks. Each certificate references a solver by name.
@@ -145,6 +155,8 @@ propagation_delay = 5      # seconds to wait for DNS propagation (default: 5)
 [solver.http]
 type = "http-01"
 listen = "[::]:80"
+# Multiple addresses: try all, succeed if at least one binds
+# listen = ["[::]:80", "[::]:8080"]
 
 # Webroot mode: writes tokens for an existing web server
 [solver.webroot]
@@ -157,6 +169,7 @@ webroot = "/var/www/acme"
 [solver.tls]
 type = "tls-alpn-01"
 listen = "[::]:443"
+# listen = ["[::]:443", "[::]:8443"]
 ```
 
 ### Certificates
@@ -179,7 +192,11 @@ profile = "shortlived"
 renew_before_days = 3
 ```
 
-If neither `solver` nor `solvers` is set, the global `default_solver` is used.
+If neither `solver` nor `solvers` is set, the global `default_solver` is used:
+
+```toml
+default_solver = "dns"
+```
 
 ### ACME profiles
 
