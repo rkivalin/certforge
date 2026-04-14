@@ -9,6 +9,8 @@
 
 ### Fixes
 
+- Fix inline hooks ignoring `--dry-run` flag
+
 ### Changes
 
 ## 0.5.0 (2026-04-13)

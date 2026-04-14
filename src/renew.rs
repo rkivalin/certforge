@@ -274,7 +274,7 @@ async fn renew_certificate(
 
     // Run inline (per-certificate) hooks
     if !cert_config.inline_hooks.is_empty() {
-        let hook_results = hooks::run_hooks(&cert_config.inline_hooks, false).await;
+        let hook_results = hooks::run_hooks(&cert_config.inline_hooks, dry_run).await;
         for result in &hook_results {
             if let Err(e) = result {
                 tracing::warn!(error = %e, "inline hook failed (non-fatal)");
