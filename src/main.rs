@@ -90,7 +90,25 @@ async fn main() -> anyhow::Result<()> {
                     println!("Account ID: {}", client.account().id());
                 }
                 AccountAction::Deactivate => {
-                    tracing::warn!("account deactivation not yet implemented");
+                    let client = acme::AcmeClient::load(&config.acme).await?;
+                    let id = client.account().id().to_string();
+                    client.deactivate().await?;
+
+                    // Remove local credentials so show/renew don't use the stale account
+                    if let Some(path) = &config.acme.account_key_credential
+                        && path.exists()
+                    {
+                        std::fs::remove_file(path)?;
+                        tracing::info!(path = %path.display(), "removed account credential");
+                    }
+                    if let Some(path) = &config.acme.account_key_path
+                        && path.exists()
+                    {
+                        std::fs::remove_file(path)?;
+                        tracing::info!(path = %path.display(), "removed account key file");
+                    }
+
+                    println!("Account {id} deactivated");
                 }
             }
         }

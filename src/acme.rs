@@ -254,4 +254,9 @@ impl AcmeClient {
     pub fn account(&self) -> &Account {
         &self.account
     }
+
+    pub async fn deactivate(self) -> Result<()> {
+        self.account.deactivate().await?;
+        Ok(())
+    }
 }

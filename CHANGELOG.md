@@ -8,6 +8,7 @@
 - Multiple listen addresses for HTTP-01 and TLS-ALPN-01 solvers (`listen = ["[::]:80", "[::]:8080"]`). Certforge tries all addresses and succeeds if at least one binds. Useful for initial provisioning when a proxy isn't running yet.
 - `dane-check` now queries published TLSA records from DNS and verifies them against expected values. Exits with code 1 if any records are missing or mismatched.
 - Configurable DNS propagation delay per solver (`propagation_delay`, default 5s).
+- Implement `account deactivate` command.
 
 ### Fixes
 
