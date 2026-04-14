@@ -5,6 +5,7 @@
 ### Features
 
 - Named hooks (`[[hook]]`) referenced by certificates via `hooks = ["name"]`. Triggered hooks run after all renewals complete, in definition order.
+- Multiple listen addresses for HTTP-01 and TLS-ALPN-01 solvers (`listen = ["[::]:80", "[::]:8080"]`). Certforge tries all addresses and succeeds if at least one binds. Useful for initial provisioning when a proxy isn't running yet.
 
 ### Fixes
 

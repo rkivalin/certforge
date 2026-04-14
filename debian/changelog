@@ -1,6 +1,7 @@
 certforge (0.6.0-1) unstable; urgency=low
 
   * Named hooks with per-certificate reference and cross-cert dedup
+  * Multiple listen addresses for HTTP-01 and TLS-ALPN-01 solvers
 
  -- Roman Kivalin <roman@shl.dev>  Mon, 14 Apr 2026 00:00:00 +0000
 

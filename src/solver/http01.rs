@@ -16,14 +16,14 @@ use crate::error::{Error, Result};
 
 /// HTTP-01 solver: standalone HTTP server mode.
 pub struct Http01StandaloneSolver {
-    listen: SocketAddr,
+    listen: Vec<SocketAddr>,
     tokens: Arc<RwLock<HashMap<String, String>>>,
     server_started: Arc<tokio::sync::Notify>,
     _server_handle: tokio::sync::OnceCell<tokio::task::JoinHandle<()>>,
 }
 
 impl Http01StandaloneSolver {
-    pub fn new(listen: SocketAddr) -> Self {
+    pub fn new(listen: Vec<SocketAddr>) -> Self {
         Self {
             listen,
             tokens: Arc::new(RwLock::new(HashMap::new())),
@@ -34,36 +34,65 @@ impl Http01StandaloneSolver {
 
     async fn ensure_server_running(&self) -> Result<()> {
         let _ = self._server_handle.get_or_try_init(|| async {
-            let listener = TcpListener::bind(self.listen).await.map_err(|e| {
-                Error::Config(format!("HTTP-01 solver: failed to bind {}: {e}", self.listen))
-            })?;
-            tracing::info!(listen = %self.listen, "HTTP-01 challenge server started");
+            // Try binding all addresses, succeed if at least one works
+            let mut listeners = Vec::new();
+            let mut errors = Vec::new();
+
+            for addr in &self.listen {
+                match TcpListener::bind(addr).await {
+                    Ok(listener) => {
+                        tracing::info!(listen = %addr, "HTTP-01 challenge server listening");
+                        listeners.push(listener);
+                    }
+                    Err(e) => {
+                        tracing::warn!(listen = %addr, error = %e, "HTTP-01 solver: failed to bind address");
+                        errors.push(format!("{addr}: {e}"));
+                    }
+                }
+            }
+
+            if listeners.is_empty() {
+                return Err(Error::Config(format!(
+                    "HTTP-01 solver: failed to bind any address: {}",
+                    errors.join(", ")
+                )));
+            }
 
             let tokens = self.tokens.clone();
             let started = self.server_started.clone();
 
             let handle = tokio::spawn(async move {
                 started.notify_waiters();
-                loop {
-                    let Ok((stream, _addr)) = listener.accept().await else {
-                        continue;
-                    };
+                // Spawn an accept loop for each bound listener
+                let mut handles = Vec::new();
+                for listener in listeners {
                     let tokens = tokens.clone();
-                    tokio::spawn(async move {
-                        let service = service_fn(move |req: Request<hyper::body::Incoming>| {
+                    handles.push(tokio::spawn(async move {
+                        loop {
+                            let Ok((stream, _addr)) = listener.accept().await else {
+                                continue;
+                            };
                             let tokens = tokens.clone();
-                            async move {
-                                handle_request(req, &tokens).await
-                            }
-                        });
-                        let _ = http1::Builder::new()
-                            .serve_connection(hyper_util::rt::TokioIo::new(stream), service)
-                            .await;
-                    });
+                            tokio::spawn(async move {
+                                let service = service_fn(move |req: Request<hyper::body::Incoming>| {
+                                    let tokens = tokens.clone();
+                                    async move {
+                                        handle_request(req, &tokens).await
+                                    }
+                                });
+                                let _ = http1::Builder::new()
+                                    .serve_connection(hyper_util::rt::TokioIo::new(stream), service)
+                                    .await;
+                            });
+                        }
+                    }));
+                }
+                // Wait for all accept loops (they run forever)
+                for h in handles {
+                    let _ = h.await;
                 }
             });
 
-            // Wait for the server to be ready
             self.server_started.notified().await;
 
             Ok::<_, Error>(handle)

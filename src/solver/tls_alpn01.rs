@@ -21,14 +21,14 @@ const ACME_TLS_ALPN_PROTO: &[u8] = b"acme-tls/1";
 
 /// TLS-ALPN-01 solver with dynamic certificate resolution.
 pub struct TlsAlpn01Solver {
-    listen: SocketAddr,
+    listen: Vec<SocketAddr>,
     certs: Arc<RwLock<HashMap<String, Arc<CertifiedKey>>>>,
     _server_handle: tokio::sync::OnceCell<tokio::task::JoinHandle<()>>,
     server_started: Arc<tokio::sync::Notify>,
 }
 
 impl TlsAlpn01Solver {
-    pub fn new(listen: SocketAddr) -> Self {
+    pub fn new(listen: Vec<SocketAddr>) -> Self {
         Self {
             listen,
             certs: Arc::new(RwLock::new(HashMap::new())),
@@ -39,10 +39,28 @@ impl TlsAlpn01Solver {
 
     async fn ensure_server_running(&self) -> Result<()> {
         let _ = self._server_handle.get_or_try_init(|| async {
-            let listener = TcpListener::bind(self.listen).await.map_err(|e| {
-                Error::Config(format!("TLS-ALPN-01 solver: failed to bind {}: {e}", self.listen))
-            })?;
-            tracing::info!(listen = %self.listen, "TLS-ALPN-01 challenge server started");
+            let mut listeners = Vec::new();
+            let mut errors = Vec::new();
+
+            for addr in &self.listen {
+                match TcpListener::bind(addr).await {
+                    Ok(listener) => {
+                        tracing::info!(listen = %addr, "TLS-ALPN-01 challenge server listening");
+                        listeners.push(listener);
+                    }
+                    Err(e) => {
+                        tracing::warn!(listen = %addr, error = %e, "TLS-ALPN-01 solver: failed to bind address");
+                        errors.push(format!("{addr}: {e}"));
+                    }
+                }
+            }
+
+            if listeners.is_empty() {
+                return Err(Error::Config(format!(
+                    "TLS-ALPN-01 solver: failed to bind any address: {}",
+                    errors.join(", ")
+                )));
+            }
 
             let certs = self.certs.clone();
             let started = self.server_started.clone();
@@ -51,31 +69,33 @@ impl TlsAlpn01Solver {
                 certs: certs.clone(),
             });
 
-            let tls_config = Arc::new(
-                rustls::ServerConfig::builder()
-                    .with_no_client_auth()
-                    .with_cert_resolver(resolver),
-            );
-
-            // Set ALPN protocols
-            // Note: we accept acme-tls/1 — the resolver handles cert selection
-            let mut tls_config_mut = (*tls_config).clone();
-            tls_config_mut.alpn_protocols = vec![ACME_TLS_ALPN_PROTO.to_vec()];
-            let tls_config = Arc::new(tls_config_mut);
+            let mut tls_config = rustls::ServerConfig::builder()
+                .with_no_client_auth()
+                .with_cert_resolver(resolver);
+            tls_config.alpn_protocols = vec![ACME_TLS_ALPN_PROTO.to_vec()];
+            let tls_config = Arc::new(tls_config);
 
             let acceptor = TlsAcceptor::from(tls_config);
 
             let handle = tokio::spawn(async move {
                 started.notify_waiters();
-                loop {
-                    let Ok((stream, _addr)) = listener.accept().await else {
-                        continue;
-                    };
+                let mut handles = Vec::new();
+                for listener in listeners {
                     let acceptor = acceptor.clone();
-                    tokio::spawn(async move {
-                        // Just accept and immediately close — the TLS handshake IS the validation
-                        let _ = acceptor.accept(stream).await;
-                    });
+                    handles.push(tokio::spawn(async move {
+                        loop {
+                            let Ok((stream, _addr)) = listener.accept().await else {
+                                continue;
+                            };
+                            let acceptor = acceptor.clone();
+                            tokio::spawn(async move {
+                                let _ = acceptor.accept(stream).await;
+                            });
+                        }
+                    }));
+                }
+                for h in handles {
+                    let _ = h.await;
                 }
             });
 

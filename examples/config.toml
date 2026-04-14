@@ -51,12 +51,13 @@ dns = "main"                    # references [dns.main]
 
 # [solver.http]
 # type = "http-01"
-# listen = "[::]:80"            # standalone HTTP server
+# listen = "[::]:80"            # single address
+# # listen = ["[::]:80", "[::]:8080"]  # multiple: try all, succeed if any binds
 # # OR: webroot = "/var/www/acme"
 
 # [solver.tls]
 # type = "tls-alpn-01"
-# listen = "[::]:443"
+# listen = "[::]:443"           # single or list like http-01
 
 # Named hooks — run once after all renewals, deduplicated across certificates.
 # Hooks run in the order defined here.

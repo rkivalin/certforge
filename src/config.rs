@@ -139,16 +139,57 @@ pub enum SolverConfig {
     },
     #[serde(rename = "http-01")]
     Http01 {
-        /// Address to listen on for standalone HTTP server.
-        listen: Option<SocketAddr>,
+        /// Address(es) to listen on for standalone HTTP server.
+        /// Accepts a single address or a list. If multiple are given,
+        /// certforge tries all and succeeds if at least one binds.
+        #[serde(default, deserialize_with = "deserialize_listen_addrs")]
+        listen: Option<Vec<SocketAddr>>,
         /// Directory to write challenge tokens for an existing web server.
         webroot: Option<PathBuf>,
     },
     #[serde(rename = "tls-alpn-01")]
     TlsAlpn01 {
-        /// Address to listen on for the TLS-ALPN server.
-        listen: SocketAddr,
+        /// Address(es) to listen on for the TLS-ALPN server.
+        #[serde(deserialize_with = "deserialize_listen_addrs_required")]
+        listen: Vec<SocketAddr>,
     },
+}
+
+/// Deserialize `listen` as either a single SocketAddr or a list.
+fn deserialize_listen_addrs<'de, D>(deserializer: D) -> std::result::Result<Option<Vec<SocketAddr>>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    #[derive(Deserialize)]
+    #[serde(untagged)]
+    enum OneOrMany {
+        One(SocketAddr),
+        Many(Vec<SocketAddr>),
+    }
+
+    Option::<OneOrMany>::deserialize(deserializer).map(|opt| {
+        opt.map(|v| match v {
+            OneOrMany::One(addr) => vec![addr],
+            OneOrMany::Many(addrs) => addrs,
+        })
+    })
+}
+
+fn deserialize_listen_addrs_required<'de, D>(deserializer: D) -> std::result::Result<Vec<SocketAddr>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    #[derive(Deserialize)]
+    #[serde(untagged)]
+    enum OneOrMany {
+        One(SocketAddr),
+        Many(Vec<SocketAddr>),
+    }
+
+    OneOrMany::deserialize(deserializer).map(|v| match v {
+        OneOrMany::One(addr) => vec![addr],
+        OneOrMany::Many(addrs) => addrs,
+    })
 }
 
 #[derive(Debug, Deserialize)]

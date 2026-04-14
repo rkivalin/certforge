@@ -36,8 +36,8 @@ fn build_solvers(config: &Config, solver_names: &[&str]) -> Result<HashMap<Strin
             SolverConfig::Http01 { listen, webroot } => {
                 if let Some(webroot) = webroot {
                     Box::new(Http01WebrootSolver::new(webroot.clone()))
-                } else if let Some(listen) = listen {
-                    Box::new(Http01StandaloneSolver::new(*listen))
+                } else if let Some(addrs) = listen {
+                    Box::new(Http01StandaloneSolver::new(addrs.clone()))
                 } else {
                     return Err(Error::Config(format!(
                         "solver '{name}': HTTP-01 requires either listen or webroot"
@@ -45,7 +45,7 @@ fn build_solvers(config: &Config, solver_names: &[&str]) -> Result<HashMap<Strin
                 }
             }
             SolverConfig::TlsAlpn01 { listen } => {
-                Box::new(TlsAlpn01Solver::new(*listen))
+                Box::new(TlsAlpn01Solver::new(listen.clone()))
             }
         };
         solvers.insert(name.to_string(), solver);
