@@ -78,11 +78,6 @@ async fn main() -> anyhow::Result<()> {
             }
         }
 
-        Command::Init => {
-            let config = config::Config::load(&cli.config)?;
-            print_init_commands(&config);
-        }
-
         Command::Account { action } => {
             let config = config::Config::load(&cli.config)?;
             match action {
@@ -258,41 +253,3 @@ async fn dane_check(
     Ok(())
 }
 
-fn print_init_commands(config: &config::Config) {
-    println!("# Run these commands to set up encrypted credentials.");
-    println!("# Pipe the secret data into each command via stdin.\n");
-
-    if let Some(path) = &config.acme.account_key_credential {
-        println!(
-            "# ACME account key (will be auto-generated if not present)\nsystemd-creds encrypt - {}\n",
-            path.display()
-        );
-    }
-
-    for (name, dns) in &config.dns {
-        if let Some(path) = &dns.tsig_key_credential {
-            println!(
-                "# DNS TSIG key for '{name}' (zones: {:?})\nsystemd-creds encrypt - {}\n",
-                dns.all_zones(),
-                path.display()
-            );
-        }
-    }
-
-    for cert in &config.certificates {
-        if let Some(path) = &cert.key_credential {
-            println!(
-                "# TLS private key for certificate '{}'\nsystemd-creds encrypt - {}\n",
-                cert.name,
-                path.display()
-            );
-        }
-    }
-
-    println!("# Example systemd unit LoadCredentialEncrypted directives:");
-    for cert in &config.certificates {
-        if let Some(path) = &cert.key_credential {
-            println!("# LoadCredentialEncrypted={}-tls-key:{}", cert.name, path.display());
-        }
-    }
-}

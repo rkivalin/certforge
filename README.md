@@ -103,7 +103,6 @@ Commands:
   dane-publish  Force-(re)publish DANE TLSA records
   dane-check    Query and verify published TLSA records against current certs
   config-check  Validate configuration file
-  init          Print systemd-creds encrypt commands for initial setup
   account       Manage ACME account
 
 Options:
@@ -192,8 +191,6 @@ Every secret (ACME account key, TSIG keys, TLS private keys) supports two modes:
 - **`*_credential`** -- full path to a `systemd-creds` encrypted file. Certforge decrypts at runtime via `systemd-creds decrypt`. Services access the same file via `LoadCredentialEncrypted=` in their unit files.
 - **`*_path`** -- plain file on disk. Simpler setup, suitable for development or environments without TPM2.
 
-Run `certforge init` to generate the `systemd-creds encrypt` commands for your configuration.
-
 ### DANE
 
 Each certificate can have multiple `[[certificate.dane]]` blocks. A DANE block references a `[dns.*]` client for TLSA record publication:
@@ -254,7 +251,7 @@ The package ships with:
 systemctl enable --now certforge.timer
 ```
 
-For encrypted credentials, add `LoadCredentialEncrypted=` directives to service units that need access to TLS keys. Run `certforge init` to see the required directives.
+For encrypted credentials, add `LoadCredentialEncrypted=` directives to service units that need access to TLS keys. See the [Credential storage](#credential-storage) section for details.
 
 ## Known limitations
 

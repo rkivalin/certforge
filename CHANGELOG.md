@@ -6,6 +6,7 @@
 
 - Named hooks (`[[hook]]`) referenced by certificates via `hooks = ["name"]`. Triggered hooks run after all renewals complete, in definition order.
 - Multiple listen addresses for HTTP-01 and TLS-ALPN-01 solvers (`listen = ["[::]:80", "[::]:8080"]`). Certforge tries all addresses and succeeds if at least one binds. Useful for initial provisioning when a proxy isn't running yet.
+- `dane-check` now queries published TLSA records from DNS and verifies them against expected values. Exits with code 1 if any records are missing or mismatched.
 
 ### Fixes
 
@@ -14,9 +15,9 @@
 - Validate that every domain has a solver configured (via `solver`, `solvers`, or `default_solver`)
 - Warn about unused DNS clients, solvers, and hooks in config
 
-- `dane-check` now queries published TLSA records from DNS and verifies them against expected values. Exits with code 1 if any records are missing or mismatched.
-
 ### Changes
+
+- Remove `init` command (redundant with README documentation)
 
 ## 0.5.0 (2026-04-13)
 

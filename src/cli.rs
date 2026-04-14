@@ -68,9 +68,6 @@ pub enum Command {
     /// Validate configuration file
     ConfigCheck,
 
-    /// Print systemd-creds encrypt commands for initial setup
-    Init,
-
     /// Manage ACME account
     Account {
         #[command(subcommand)]
