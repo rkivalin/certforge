@@ -3,12 +3,12 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use hickory_client::client::{Client, ClientHandle};
-use hickory_proto::op::{MessageFinalizer, ResponseCode};
+use hickory_proto::op::{Message, MessageType, OpCode, MessageFinalizer, Query, ResponseCode, UpdateMessage};
 use hickory_proto::rr::rdata::{TLSA, TXT};
 use hickory_proto::rr::rdata::tlsa::{CertUsage, Matching, Selector};
-use hickory_proto::rr::{Name, RData, Record, RecordType};
+use hickory_proto::rr::{DNSClass, Name, RData, Record, RecordType};
 use hickory_proto::tcp::TcpClientStream;
-use hickory_proto::xfer::DnsResponse;
+use hickory_proto::xfer::{DnsHandle, DnsResponse};
 use tokio::task::JoinHandle;
 
 use hickory_client::{ClientError, ClientErrorKind};
@@ -195,7 +195,7 @@ impl DnsUpdater {
         Ok(())
     }
 
-    /// Replace all TLSA records at a name (delete all, then add new ones).
+    /// Replace all TLSA records at a name atomically (single RFC 2136 update).
     pub async fn replace_tlsa_records(
         &mut self,
         zone: &Name,
@@ -203,29 +203,39 @@ impl DnsUpdater {
         records: &[TlsaRecord],
         ttl: u32,
     ) -> Result<()> {
-        // First delete all existing TLSA records at this name
-        let response = self
-            .client
-            .delete_rrset(
-                Record::update0(name.clone(), 0, RecordType::TLSA),
-                zone.clone(),
-            )
-            .await
-            .map_err(|e| dns_err("failed to delete TLSA RRset", e))?;
-        check_update_response("failed to delete TLSA RRset", &response)?;
+        let mut message = Message::new();
+        message
+            .set_id(0)
+            .set_message_type(MessageType::Query)
+            .set_op_code(OpCode::Update)
+            .set_recursion_desired(false);
 
-        // Then add the new ones
+        let mut zone_query = Query::new();
+        zone_query
+            .set_name(zone.clone())
+            .set_query_class(DNSClass::IN)
+            .set_query_type(RecordType::SOA);
+        message.add_zone(zone_query);
+
+        // Delete all existing TLSA records at this name
+        let mut delete = Record::update0(name.clone(), 0, RecordType::TLSA);
+        delete.set_dns_class(DNSClass::ANY);
+        message.add_update(delete);
+
+        // Add new records in the same update
         for tlsa in records {
             let rdata = tlsa_to_rdata(tlsa);
-            let record = Record::from_rdata(name.clone(), ttl, rdata);
-
-            let response = self
-                .client
-                .create(record, zone.clone())
-                .await
-                .map_err(|e| dns_err("failed to add TLSA record", e))?;
-            check_update_response("failed to add TLSA record", &response)?;
+            message.add_update(Record::from_rdata(name.clone(), ttl, rdata));
         }
+
+        use std::pin::Pin;
+        use futures_core::Stream;
+        let mut stream = self.client.send(message);
+        let response = std::future::poll_fn(|cx| Pin::new(&mut stream).poll_next(cx))
+            .await
+            .ok_or_else(|| Error::DnsUpdate("replace TLSA records: no response".into()))?
+            .map_err(|e| dns_err("failed to replace TLSA records", ClientError::from(e)))?;
+        check_update_response("failed to replace TLSA records", &response)?;
 
         tracing::debug!(%name, count = records.len(), "replaced TLSA records");
         Ok(())

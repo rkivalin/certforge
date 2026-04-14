@@ -12,6 +12,7 @@
 
 - Fix `account show` creating a new account instead of erroring when no credentials exist
 - Fix inline hooks ignoring `--dry-run` flag
+- Fix DANE TLSA record replacement to use a single atomic DNS update instead of separate delete and add requests
 - Validate certificate name and hook name uniqueness
 - Validate that every domain has a solver configured (via `solver`, `solvers`, or `default_solver`)
 - Warn about unused DNS clients, solvers, and hooks in config

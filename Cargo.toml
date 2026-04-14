@@ -29,6 +29,7 @@ rustls-pki-types = "1"
 
 # Async
 tokio = { version = "1", features = ["macros", "rt-multi-thread", "net", "time", "process", "io-util"] }
+futures-core = "0.3"
 
 # CLI
 clap = { version = "4", features = ["derive"] }
