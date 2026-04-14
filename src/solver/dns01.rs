@@ -1,3 +1,5 @@
+use std::time::Duration;
+
 use hickory_proto::rr::Name;
 
 use crate::acme::ChallengeInfo;
@@ -9,11 +11,12 @@ use crate::error::{Error, Result};
 /// DNS-01 challenge solver using RFC 2136 dynamic updates.
 pub struct Dns01Solver {
     dns_config: DnsClientConfig,
+    propagation_delay: Duration,
 }
 
 impl Dns01Solver {
-    pub fn new(dns_config: DnsClientConfig) -> Self {
-        Self { dns_config }
+    pub fn new(dns_config: DnsClientConfig, propagation_delay: Duration) -> Self {
+        Self { dns_config, propagation_delay }
     }
 
     /// Strip wildcard prefix for DNS-01 challenge name.
@@ -81,7 +84,7 @@ impl super::Solver for Dns01Solver {
         updater.delete_txt_record(&zone, &name, &challenge.dns_value).await
     }
 
-    fn needs_propagation_delay(&self) -> bool {
-        true
+    fn propagation_delay(&self) -> Option<Duration> {
+        Some(self.propagation_delay)
     }
 }

@@ -135,7 +135,8 @@ Solvers are defined in `[solver.*]` blocks. Each certificate references a solver
 ```toml
 [solver.dns]
 type = "dns-01"
-dns = "main"          # references a [dns.*] block
+dns = "main"               # references a [dns.*] block
+propagation_delay = 5      # seconds to wait for DNS propagation (default: 5)
 ```
 
 **HTTP-01** -- serves challenge tokens over HTTP:

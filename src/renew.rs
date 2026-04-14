@@ -29,9 +29,12 @@ fn build_solvers(config: &Config, solver_names: &[&str]) -> Result<HashMap<Strin
         }
         let solver_config = config.solver_config(name)?;
         let solver: Box<dyn Solver> = match solver_config {
-            SolverConfig::Dns01 { dns } => {
+            SolverConfig::Dns01 { dns, propagation_delay } => {
                 let dns_config = config.dns_client(dns)?;
-                Box::new(Dns01Solver::new(dns_config.clone()))
+                Box::new(Dns01Solver::new(
+                    dns_config.clone(),
+                    std::time::Duration::from_secs(*propagation_delay),
+                ))
             }
             SolverConfig::Http01 { listen, webroot } => {
                 if let Some(webroot) = webroot {
@@ -224,10 +227,10 @@ async fn renew_certificate(
 
     // Run ACME flow, ensuring cleanup happens even on failure
     let order_result = async {
-        // Wait for DNS propagation if any solver needs it
-        if solvers.values().any(|s| s.needs_propagation_delay()) {
-            tracing::debug!("waiting 5s for DNS propagation");
-            tokio::time::sleep(std::time::Duration::from_secs(5)).await;
+        // Wait for DNS propagation (use the longest delay across all solvers)
+        if let Some(delay) = solvers.values().filter_map(|s| s.propagation_delay()).max() {
+            tracing::debug!(seconds = delay.as_secs(), "waiting for DNS propagation");
+            tokio::time::sleep(delay).await;
         }
 
         tracing::debug!(name = %cert_config.name, "setting challenges ready");

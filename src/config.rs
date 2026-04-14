@@ -127,6 +127,10 @@ fn default_dns_protocol() -> DnsProtocol {
     DnsProtocol::Tcp
 }
 
+fn default_propagation_delay() -> u64 {
+    5
+}
+
 /// Challenge solver configuration, tagged by type.
 #[derive(Debug, Deserialize)]
 #[serde(tag = "type")]
@@ -136,6 +140,9 @@ pub enum SolverConfig {
     Dns01 {
         /// Reference to a [dns.*] client config by name.
         dns: String,
+        /// Seconds to wait for DNS propagation after publishing challenge records.
+        #[serde(default = "default_propagation_delay")]
+        propagation_delay: u64,
     },
     #[serde(rename = "http-01")]
     Http01 {
@@ -433,7 +440,7 @@ impl Config {
         // Validate solver configs
         for (name, solver) in &self.solver {
             match solver {
-                SolverConfig::Dns01 { dns } => {
+                SolverConfig::Dns01 { dns, .. } => {
                     if !self.dns.contains_key(dns) {
                         return Err(Error::Config(format!(
                             "solver.{name}: dns client '{dns}' not found in [dns.*]"
@@ -526,7 +533,7 @@ impl Config {
                         )));
                     }
                     // DNS-01: verify domain matches a zone in the DNS client
-                    if let Some(SolverConfig::Dns01 { dns: dns_name }) = self.solver.get(name)
+                    if let Some(SolverConfig::Dns01 { dns: dns_name, .. }) = self.solver.get(name)
                         && let Some(dns_config) = self.dns.get(dns_name.as_str()) {
                             let base = domain.strip_prefix("*.").unwrap_or(domain);
                             let challenge_name = format!("_acme-challenge.{base}");
@@ -597,7 +604,7 @@ impl Config {
 
         // Solvers reference DNS clients
         for solver in self.solver.values() {
-            if let SolverConfig::Dns01 { dns } = solver {
+            if let SolverConfig::Dns01 { dns, .. } = solver {
                 referenced_dns.insert(dns);
             }
         }

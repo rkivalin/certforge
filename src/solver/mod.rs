@@ -2,6 +2,8 @@ pub mod dns01;
 pub mod http01;
 pub mod tls_alpn01;
 
+use std::time::Duration;
+
 use crate::acme::ChallengeInfo;
 use crate::error::Result;
 
@@ -14,8 +16,9 @@ pub trait Solver: Send + Sync {
     /// Clean up a challenge after validation (success or failure).
     async fn cleanup(&self, challenge: &ChallengeInfo) -> Result<()>;
 
-    /// Whether this solver needs a DNS propagation delay after presenting.
-    fn needs_propagation_delay(&self) -> bool {
-        false
+    /// Propagation delay to wait after presenting challenges.
+    /// Returns None for solvers that don't need a delay (HTTP-01, TLS-ALPN-01).
+    fn propagation_delay(&self) -> Option<Duration> {
+        None
     }
 }

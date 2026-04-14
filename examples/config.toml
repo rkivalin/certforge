@@ -44,6 +44,7 @@ protocol = "tcp"
 [solver.dns]
 type = "dns-01"
 dns = "main"                    # references [dns.main]
+# propagation_delay = 5         # seconds to wait for DNS propagation (default: 5)
 
 # [solver.dns-org]
 # type = "dns-01"
@@ -77,6 +78,7 @@ dns = "main"                    # references [dns.main]
 # name = "mail"
 # domains = ["mail.example.com"]
 # solver = "dns"
+# key_type = "ecdsa-p256"        # ecdsa-p256, ecdsa-p384
 # key_credential = "/etc/credstore.encrypted/mail-tls-key"
 # # key_path = "/etc/certforge/keys/mail.key"
 # cert_path = "/etc/certforge/certs/mail.pem"
