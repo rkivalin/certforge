@@ -410,14 +410,23 @@ impl Config {
         }
 
         // Validate named hook definitions
-        for named_hook in &self.hook {
-            if let HookConfig::Command { command } = &named_hook.hook
-                && command.is_empty()
-            {
-                return Err(Error::Config(format!(
-                    "hook '{}': command hook has empty command",
-                    named_hook.name
-                )));
+        {
+            let mut seen = std::collections::HashSet::new();
+            for named_hook in &self.hook {
+                if !seen.insert(&named_hook.name) {
+                    return Err(Error::Config(format!(
+                        "duplicate hook name '{}'",
+                        named_hook.name
+                    )));
+                }
+                if let HookConfig::Command { command } = &named_hook.hook
+                    && command.is_empty()
+                {
+                    return Err(Error::Config(format!(
+                        "hook '{}': command hook has empty command",
+                        named_hook.name
+                    )));
+                }
             }
         }
 
@@ -449,10 +458,17 @@ impl Config {
 
         // Validate certificates
         let is_ip = |s: &str| s.parse::<std::net::IpAddr>().is_ok();
+        let mut seen_cert_names = std::collections::HashSet::new();
 
         for cert in &self.certificates {
             if cert.name.is_empty() {
                 return Err(Error::Config("certificate: name must not be empty".into()));
+            }
+            if !seen_cert_names.insert(&cert.name) {
+                return Err(Error::Config(format!(
+                    "duplicate certificate name '{}'",
+                    cert.name
+                )));
             }
             if cert.domains.is_empty() {
                 return Err(Error::Config(format!(
@@ -489,6 +505,12 @@ impl Config {
             // Validate each domain's solver reference and check DNS-01 not used with IPs
             for (i, domain) in cert.domains.iter().enumerate() {
                 let solver_name = cert.solver_for_domain(i, self.default_solver.as_deref());
+                if solver_name.is_none() {
+                    return Err(Error::Config(format!(
+                        "certificate {}: no solver configured for domain '{domain}' (set solver, solvers, or default_solver)",
+                        cert.name
+                    )));
+                }
                 if let Some(name) = solver_name {
                     if !self.solver.contains_key(name) {
                         return Err(Error::Config(format!(
@@ -565,6 +587,52 @@ impl Config {
                         cert.name
                     )));
                 }
+            }
+        }
+
+        // Warn about unused definitions
+        let mut referenced_dns: std::collections::HashSet<&str> = std::collections::HashSet::new();
+        let mut referenced_solvers: std::collections::HashSet<&str> = std::collections::HashSet::new();
+        let mut referenced_hooks: std::collections::HashSet<&str> = std::collections::HashSet::new();
+
+        // Solvers reference DNS clients
+        for solver in self.solver.values() {
+            if let SolverConfig::Dns01 { dns } = solver {
+                referenced_dns.insert(dns);
+            }
+        }
+        // Certificates reference solvers, DNS clients (via DANE), and hooks
+        for cert in &self.certificates {
+            if let Some(s) = &cert.solver {
+                referenced_solvers.insert(s);
+            }
+            if let Some(ss) = &cert.solvers {
+                referenced_solvers.extend(ss.iter().map(|s| s.as_str()));
+            }
+            for dane in &cert.dane {
+                referenced_dns.insert(&dane.dns);
+            }
+            for hook_name in &cert.hooks {
+                referenced_hooks.insert(hook_name);
+            }
+        }
+        if let Some(default) = &self.default_solver {
+            referenced_solvers.insert(default);
+        }
+
+        for name in self.dns.keys() {
+            if !referenced_dns.contains(name.as_str()) {
+                tracing::warn!("dns client '{name}' is defined but not referenced by any solver or DANE block");
+            }
+        }
+        for name in self.solver.keys() {
+            if !referenced_solvers.contains(name.as_str()) {
+                tracing::warn!("solver '{name}' is defined but not referenced by any certificate");
+            }
+        }
+        for named_hook in &self.hook {
+            if !referenced_hooks.contains(named_hook.name.as_str()) {
+                tracing::warn!("hook '{}' is defined but not referenced by any certificate", named_hook.name);
             }
         }
 
@@ -945,5 +1013,94 @@ solver = "dns"
         assert_eq!(dns.all_zones(), vec!["example.com", "legacy.com"]);
         assert_eq!(dns.find_zone("host.legacy.com"), Some("legacy.com"));
         assert_eq!(dns.find_zone("host.example.com"), Some("example.com"));
+    }
+
+    #[test]
+    fn validation_rejects_duplicate_certificate_names() {
+        let toml = r#"
+[acme]
+account_key_path = "/etc/certforge/account.key"
+contact = ["mailto:admin@example.com"]
+
+[dns.main]
+server = "ns1.example.com"
+zone = "example.com"
+tsig_key_path = "/etc/certforge/tsig.key"
+tsig_key_name = "certforge."
+
+[solver.dns]
+type = "dns-01"
+dns = "main"
+
+[[certificate]]
+name = "web"
+domains = ["example.com"]
+key_path = "/etc/certforge/keys/web.key"
+cert_path = "/etc/certforge/certs/web.pem"
+solver = "dns"
+
+[[certificate]]
+name = "web"
+domains = ["www.example.com"]
+key_path = "/etc/certforge/keys/web2.key"
+cert_path = "/etc/certforge/certs/web2.pem"
+solver = "dns"
+"#;
+
+        let config: Config = toml::from_str(toml).unwrap();
+        let err = config.validate().unwrap_err();
+        assert!(err.to_string().contains("duplicate certificate name"));
+    }
+
+    #[test]
+    fn validation_rejects_duplicate_hook_names() {
+        let toml = r#"
+[acme]
+account_key_path = "/etc/certforge/account.key"
+contact = ["mailto:admin@example.com"]
+
+[[hook]]
+name = "reload"
+type = "systemd-reload"
+unit = "nginx.service"
+
+[[hook]]
+name = "reload"
+type = "systemd-reload"
+unit = "postfix.service"
+"#;
+
+        let config: Config = toml::from_str(toml).unwrap();
+        let err = config.validate().unwrap_err();
+        assert!(err.to_string().contains("duplicate hook name"));
+    }
+
+    #[test]
+    fn validation_rejects_no_solver() {
+        let toml = r#"
+[acme]
+account_key_path = "/etc/certforge/account.key"
+contact = ["mailto:admin@example.com"]
+
+[dns.main]
+server = "ns1.example.com"
+zone = "example.com"
+tsig_key_path = "/etc/certforge/tsig.key"
+tsig_key_name = "certforge."
+
+[solver.dns]
+type = "dns-01"
+dns = "main"
+
+[[certificate]]
+name = "web"
+domains = ["example.com"]
+key_path = "/etc/certforge/keys/web.key"
+cert_path = "/etc/certforge/certs/web.pem"
+"#;
+
+        let config: Config = toml::from_str(toml).unwrap();
+        let err = config.validate().unwrap_err();
+        assert!(err.to_string().contains("no solver configured"));
     }
 }
