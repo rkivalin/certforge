@@ -14,6 +14,8 @@
 - Validate that every domain has a solver configured (via `solver`, `solvers`, or `default_solver`)
 - Warn about unused DNS clients, solvers, and hooks in config
 
+- `dane-check` now queries published TLSA records from DNS and verifies them against expected values. Exits with code 1 if any records are missing or mismatched.
+
 ### Changes
 
 ## 0.5.0 (2026-04-13)

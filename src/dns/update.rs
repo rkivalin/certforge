@@ -231,6 +231,29 @@ impl DnsUpdater {
         Ok(())
     }
 
+    /// Query TLSA records at a given name.
+    pub async fn query_tlsa(&mut self, name: &Name) -> Result<Vec<TlsaRecord>> {
+        let response = self
+            .client
+            .query(name.clone(), hickory_proto::rr::DNSClass::IN, RecordType::TLSA)
+            .await
+            .map_err(|e| dns_err("TLSA query failed", e))?;
+
+        let mut records = Vec::new();
+        for record in response.answers() {
+            if let RData::TLSA(tlsa) = record.data() {
+                records.push(TlsaRecord {
+                    usage: tlsa.cert_usage().into(),
+                    selector: tlsa.selector().into(),
+                    matching_type: tlsa.matching().into(),
+                    association_data: tlsa.cert_data().to_vec(),
+                });
+            }
+        }
+
+        Ok(records)
+    }
+
     /// Delete a specific TLSA record.
     #[allow(dead_code)]
     pub async fn delete_tlsa_record(

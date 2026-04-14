@@ -188,6 +188,8 @@ async fn dane_check(
     config: &config::Config,
     name_filter: Option<&str>,
 ) -> anyhow::Result<()> {
+    let mut all_ok = true;
+
     for cert_config in &config.certificates {
         if let Some(filter) = name_filter
             && cert_config.name != filter {
@@ -203,21 +205,54 @@ async fn dane_check(
         let cert_result = certs::CertInfo::load(&cert_config.cert_path);
 
         for dane_config in &cert_config.dane {
-            match &cert_result {
-                Ok(cert_info) => {
-                    let records = dane::compute_tlsa_records(cert_info, dane_config)?;
-                    let record = &records[0];
-                    for name in &dane_config.names {
-                        println!("  {name}: expected TLSA {}", record.to_rdata_string());
-                    }
-                }
+            let expected = match &cert_result {
+                Ok(cert_info) => dane::compute_tlsa_records(cert_info, dane_config)?,
                 Err(_) => {
                     println!("  Certificate not found, cannot compute expected TLSA records");
+                    continue;
+                }
+            };
+            let expected_record = &expected[0];
+
+            let dns_config = config.dns_client(&dane_config.dns)?;
+            let signer = dns::tsig::load_tsig_signer(dns_config).await?;
+            let mut querier = dns::update::DnsUpdater::connect(dns_config, signer).await?;
+
+            for tlsa_name in &dane_config.names {
+                let name = hickory_proto::rr::Name::from_ascii(tlsa_name)
+                    .map_err(|e| anyhow::anyhow!("invalid TLSA name '{tlsa_name}': {e}"))?;
+
+                match querier.query_tlsa(&name).await {
+                    Ok(published) if published.is_empty() => {
+                        println!("  {tlsa_name}: MISSING (no TLSA records published)");
+                        println!("    expected: {}", expected_record.to_rdata_string());
+                        all_ok = false;
+                    }
+                    Ok(published) => {
+                        if published.contains(expected_record) {
+                            println!("  {tlsa_name}: OK");
+                        } else {
+                            println!("  {tlsa_name}: MISMATCH");
+                            println!("    expected: {}", expected_record.to_rdata_string());
+                            for rec in &published {
+                                println!("    found:    {}", rec.to_rdata_string());
+                            }
+                            all_ok = false;
+                        }
+                    }
+                    Err(e) => {
+                        println!("  {tlsa_name}: ERROR ({e})");
+                        all_ok = false;
+                    }
                 }
             }
         }
 
         println!();
+    }
+
+    if !all_ok {
+        std::process::exit(1);
     }
 
     Ok(())

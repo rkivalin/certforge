@@ -4,6 +4,7 @@ certforge (0.6.0-1) unstable; urgency=low
   * Multiple listen addresses for HTTP-01 and TLS-ALPN-01 solvers
   * Fix inline hooks ignoring --dry-run flag
   * Improve config validation
+  * dane-check verifies published TLSA records against expected values
 
  -- Roman Kivalin <roman@shl.dev>  Mon, 14 Apr 2026 00:00:00 +0000
 

@@ -260,7 +260,6 @@ For encrypted credentials, add `LoadCredentialEncrypted=` directives to service 
 
 - **TSIG HMAC-SHA-512**: BIND 9.18+ truncates HMAC-SHA-512 MACs by default, and the underlying DNS library (hickory-dns) does not support verifying truncated HMACs. Use `hmac-sha256` instead.
 - RSA key types not yet supported (ECDSA only).
-- `dane-check` shows expected TLSA records but does not query DNS to verify.
 
 ## License
 
