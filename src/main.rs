@@ -82,11 +82,11 @@ async fn main() -> anyhow::Result<()> {
             let config = config::Config::load(&cli.config)?;
             match action {
                 AccountAction::Create => {
-                    let client = acme::AcmeClient::new(&config.acme).await?;
+                    let client = acme::AcmeClient::create(&config.acme).await?;
                     println!("Account ID: {}", client.account().id());
                 }
                 AccountAction::Show => {
-                    let client = acme::AcmeClient::new(&config.acme).await?;
+                    let client = acme::AcmeClient::load(&config.acme).await?;
                     println!("Account ID: {}", client.account().id());
                 }
                 AccountAction::Deactivate => {

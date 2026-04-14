@@ -30,72 +30,79 @@ pub struct ChallengeInfo {
 }
 
 impl AcmeClient {
+    /// Load existing account or create a new one if credentials don't exist.
     pub async fn new(config: &AcmeConfig) -> Result<Self> {
-        let cred_data = credentials::load_secret(
+        match Self::load(config).await {
+            Ok(client) => Ok(client),
+            Err(_) => Self::create(config).await,
+        }
+    }
+
+    /// Load an existing account from credentials. Errors if no credentials exist.
+    pub async fn load(config: &AcmeConfig) -> Result<Self> {
+        let data = credentials::load_secret(
             config.account_key_credential.as_deref(),
             config.account_key_path.as_deref(),
         )
-        .await;
+        .await?;
 
-        match cred_data {
-            Ok(data) => {
-                let creds: AccountCredentials = serde_json::from_slice(&data).map_err(|e| {
-                    Error::Config(format!("invalid account credentials: {e}"))
-                })?;
-                let account = Account::builder()
-                    .map_err(Error::Acme)?
-                    .from_credentials(creds)
-                    .await?;
-                tracing::info!(id = %account.id(), "loaded existing ACME account");
-                Ok(Self { account })
+        let creds: AccountCredentials = serde_json::from_slice(&data).map_err(|e| {
+            Error::Config(format!("invalid account credentials: {e}"))
+        })?;
+        let account = Account::builder()
+            .map_err(Error::Acme)?
+            .from_credentials(creds)
+            .await?;
+        tracing::info!(id = %account.id(), "loaded existing ACME account");
+        Ok(Self { account })
+    }
+
+    /// Create a new ACME account and save credentials.
+    pub async fn create(config: &AcmeConfig) -> Result<Self> {
+        tracing::info!(directory = %config.directory_url, "creating new ACME account");
+        let (account, creds) = Account::builder()
+            .map_err(Error::Acme)?
+            .create(
+                &NewAccount {
+                    contact: &config
+                        .contact
+                        .iter()
+                        .map(|s| s.as_str())
+                        .collect::<Vec<_>>(),
+                    terms_of_service_agreed: true,
+                    only_return_existing: false,
+                },
+                config.directory_url.clone(),
+                None,
+            )
+            .await?;
+
+        tracing::info!(id = %account.id(), "created new ACME account");
+
+        let creds_json = serde_json::to_vec(&creds)
+            .map_err(|e| Error::Config(format!("failed to serialize credentials: {e}")))?;
+
+        if let Some(cred_path) = &config.account_key_credential {
+            credentials::encrypt_credential(&creds_json, cred_path)
+                .await?;
+            tracing::info!(path = %cred_path.display(), "saved account credentials (encrypted)");
+        } else if let Some(file_path) = &config.account_key_path {
+            if let Some(parent) = file_path.parent() {
+                std::fs::create_dir_all(parent)?;
             }
-            Err(_) => {
-                tracing::info!(directory = %config.directory_url, "creating new ACME account");
-                let (account, creds) = Account::builder()
-                    .map_err(Error::Acme)?
-                    .create(
-                        &NewAccount {
-                            contact: &config
-                                .contact
-                                .iter()
-                                .map(|s| s.as_str())
-                                .collect::<Vec<_>>(),
-                            terms_of_service_agreed: true,
-                            only_return_existing: false,
-                        },
-                        config.directory_url.clone(),
-                        None,
-                    )
-                    .await?;
-
-                tracing::info!(id = %account.id(), "created new ACME account");
-
-                let creds_json = serde_json::to_vec(&creds)
-                    .map_err(|e| Error::Config(format!("failed to serialize credentials: {e}")))?;
-
-                if let Some(cred_path) = &config.account_key_credential {
-                    credentials::encrypt_credential(&creds_json, cred_path)
-                        .await?;
-                    tracing::info!(path = %cred_path.display(), "saved account credentials (encrypted)");
-                } else if let Some(file_path) = &config.account_key_path {
-                    if let Some(parent) = file_path.parent() {
-                        std::fs::create_dir_all(parent)?;
-                    }
-                    std::fs::write(file_path, &creds_json)?;
-                    #[cfg(unix)]
-                    {
-                        use std::os::unix::fs::PermissionsExt;
-                        std::fs::set_permissions(
-                            file_path,
-                            std::fs::Permissions::from_mode(0o600),
-                        )?;
-                    }
-                    tracing::info!(path = %file_path.display(), "saved account credentials");
-                }
-
-                Ok(Self { account })
+            std::fs::write(file_path, &creds_json)?;
+            #[cfg(unix)]
+            {
+                use std::os::unix::fs::PermissionsExt;
+                std::fs::set_permissions(
+                    file_path,
+                    std::fs::Permissions::from_mode(0o600),
+                )?;
             }
+            tracing::info!(path = %file_path.display(), "saved account credentials");
         }
+
+        Ok(Self { account })
     }
 
     /// Create a new ACME order for the given domains/IPs.

@@ -10,6 +10,7 @@
 
 ### Fixes
 
+- Fix `account show` creating a new account instead of erroring when no credentials exist
 - Fix inline hooks ignoring `--dry-run` flag
 - Validate certificate name and hook name uniqueness
 - Validate that every domain has a solver configured (via `solver`, `solvers`, or `default_solver`)
