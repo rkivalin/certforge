@@ -3,12 +3,35 @@ use std::sync::Arc;
 use base64::Engine;
 use hickory_proto::dnssec::tsig::TSigner;
 use hickory_proto::dnssec::rdata::tsig::TsigAlgorithm;
-use hickory_proto::op::MessageFinalizer;
-use hickory_proto::rr::Name;
+use hickory_proto::op::{Message, MessageFinalizer, MessageVerifier};
+use hickory_proto::rr::{Name, Record};
+use hickory_proto::ProtoError;
 
 use crate::config;
 use crate::credentials;
 use crate::error::{Error, Result};
+
+/// Wrapper around TSigner that signs all messages, not just updates.
+///
+/// The default TSigner only signs Update/Notify/AXFR/IXFR messages. This wrapper
+/// overrides `should_finalize_message` to always return true, so regular queries
+/// are also TSIG-signed. This is needed when the DNS server uses TSIG keys for
+/// view selection.
+struct AlwaysSignTsig(TSigner);
+
+impl MessageFinalizer for AlwaysSignTsig {
+    fn finalize_message(
+        &self,
+        message: &Message,
+        current_time: u32,
+    ) -> std::result::Result<(Vec<Record>, Option<MessageVerifier>), ProtoError> {
+        self.0.finalize_message(message, current_time)
+    }
+
+    fn should_finalize_message(&self, _message: &Message) -> bool {
+        true
+    }
+}
 
 /// Load a TSIG signer from the DNS server config.
 pub async fn load_tsig_signer(
@@ -37,7 +60,7 @@ pub async fn load_tsig_signer(
     let signer = TSigner::new(key_data, algorithm, signer_name, 300)
         .map_err(|e| Error::DnsUpdate(format!("failed to create TSIG signer: {e}")))?;
 
-    Ok(Arc::new(signer))
+    Ok(Arc::new(AlwaysSignTsig(signer)))
 }
 
 /// Decode a TSIG key from base64 or return raw bytes.
