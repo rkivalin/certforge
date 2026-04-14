@@ -58,6 +58,18 @@ dns = "main"                    # references [dns.main]
 # type = "tls-alpn-01"
 # listen = "[::]:443"
 
+# Named hooks — run once after all renewals, deduplicated across certificates.
+# Hooks run in the order defined here.
+# [[hook]]
+# name = "reload-postfix"
+# type = "systemd-reload"
+# unit = "postfix.service"
+#
+# [[hook]]
+# name = "reload-nginx"
+# type = "systemd-reload"
+# unit = "nginx.service"
+
 # Uncomment and configure certificate blocks below.
 #
 # [[certificate]]
@@ -69,6 +81,8 @@ dns = "main"                    # references [dns.main]
 # cert_path = "/etc/certforge/certs/mail.pem"
 # renew_before_days = 30
 # rotate_key = false
+# # Named hooks (deduplicated if multiple certs reference the same hook)
+# hooks = ["reload-postfix"]
 #
 #   # DANE TLSA for SMTP (port 25)
 #   [[certificate.dane]]
@@ -80,6 +94,7 @@ dns = "main"                    # references [dns.main]
 #   ttl = 300
 #   pre_publish = true
 #
+#   # Inline hooks (always run per-certificate, not deduplicated)
 #   [[certificate.hook]]
 #   type = "systemd-reload"
 #   unit = "postfix.service"

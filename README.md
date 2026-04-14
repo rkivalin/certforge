@@ -212,6 +212,25 @@ With `usage = "ee"` and `selector = "spki"` (the recommended DANE-EE configurati
 
 ### Post-renewal hooks
 
+**Named hooks** are defined at the top level and referenced by certificates. When multiple certificates reference the same hook, it runs once after all renewals complete, in definition order:
+
+```toml
+[[hook]]
+name = "reload-postfix"
+type = "systemd-reload"
+unit = "postfix.service"
+
+[[certificate]]
+name = "mail"
+hooks = ["reload-postfix"]
+
+[[certificate]]
+name = "imap"
+hooks = ["reload-postfix"]   # same hook, runs once
+```
+
+**Inline hooks** run per-certificate immediately after each renewal:
+
 ```toml
 [[certificate.hook]]
 type = "systemd-reload"    # or "systemd-restart"
@@ -222,7 +241,7 @@ type = "command"
 command = ["/usr/local/bin/deploy-cert.sh", "--name", "mail"]
 ```
 
-Hooks run sequentially after a successful renewal. A hook failure is logged but does not prevent subsequent hooks from running.
+Hook failures are logged but do not prevent subsequent hooks from running.
 
 ## systemd integration
 

@@ -21,6 +21,10 @@ pub struct Config {
     #[serde(default)]
     pub solver: HashMap<String, SolverConfig>,
 
+    /// Named hooks, run after all renewals in definition order.
+    #[serde(default)]
+    pub hook: Vec<NamedHookConfig>,
+
     #[serde(rename = "certificate", default)]
     pub certificates: Vec<CertificateConfig>,
 }
@@ -180,8 +184,13 @@ pub struct CertificateConfig {
     #[serde(default)]
     pub dane: Vec<DaneConfig>,
 
+    /// Named hooks to run after renewal (references [[hook]] entries by name).
+    #[serde(default)]
+    pub hooks: Vec<String>,
+
+    /// Inline hooks, run per-certificate immediately after renewal.
     #[serde(default, rename = "hook")]
-    pub hooks: Vec<HookConfig>,
+    pub inline_hooks: Vec<HookConfig>,
 }
 
 #[derive(Debug, Clone, Deserialize, PartialEq, Eq)]
@@ -274,6 +283,14 @@ pub enum HookConfig {
     Command { command: Vec<String> },
 }
 
+/// A named hook that can be referenced by certificates.
+#[derive(Debug, Deserialize)]
+pub struct NamedHookConfig {
+    pub name: String,
+    #[serde(flatten)]
+    pub hook: HookConfig,
+}
+
 impl CertificateConfig {
     /// Resolve the solver name for the i-th domain.
     /// Priority: solvers[i] > solver > default_solver.
@@ -347,6 +364,18 @@ impl Config {
             if dns.all_zones().is_empty() {
                 return Err(Error::Config(format!(
                     "dns.{name}: either zone or zones must be set"
+                )));
+            }
+        }
+
+        // Validate named hook definitions
+        for named_hook in &self.hook {
+            if let HookConfig::Command { command } = &named_hook.hook
+                && command.is_empty()
+            {
+                return Err(Error::Config(format!(
+                    "hook '{}': command hook has empty command",
+                    named_hook.name
                 )));
             }
         }
@@ -476,7 +505,17 @@ impl Config {
                 }
             }
 
-            for hook in &cert.hooks {
+            // Validate named hook references
+            for hook_name in &cert.hooks {
+                if !self.hook.iter().any(|h| h.name == *hook_name) {
+                    return Err(Error::Config(format!(
+                        "certificate {}: hook '{hook_name}' not found in [[hook]]",
+                        cert.name
+                    )));
+                }
+            }
+
+            for hook in &cert.inline_hooks {
                 if let HookConfig::Command { command } = hook
                     && command.is_empty()
                 {
@@ -584,7 +623,7 @@ solvers = ["dns", "http"]
         assert_eq!(cert.dane[0].dns, "main");
         assert_eq!(cert.dane[0].usage, DaneUsage::Ee);
         assert!(cert.dane[0].pre_publish);
-        assert_eq!(cert.hooks.len(), 2);
+        assert_eq!(cert.inline_hooks.len(), 2);
 
         // Solver resolution
         assert_eq!(cert.solver_for_domain(0, None), Some("dns"));

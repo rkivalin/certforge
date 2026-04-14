@@ -4,6 +4,8 @@
 
 ### Features
 
+- Named hooks (`[[hook]]`) referenced by certificates via `hooks = ["name"]`. Triggered hooks run after all renewals complete, in definition order.
+
 ### Fixes
 
 ### Changes

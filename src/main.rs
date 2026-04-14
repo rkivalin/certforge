@@ -67,11 +67,13 @@ async fn main() -> anyhow::Result<()> {
             );
             for cert in &config.certificates {
                 println!(
-                    "  - {}: {} domain(s), {} DANE block(s), {} hook(s)",
+                    "  - {}: {} domain(s), {} DANE block(s), {} hook(s) ({} named, {} inline)",
                     cert.name,
                     cert.domains.len(),
                     cert.dane.len(),
-                    cert.hooks.len()
+                    cert.hooks.len() + cert.inline_hooks.len(),
+                    cert.hooks.len(),
+                    cert.inline_hooks.len()
                 );
             }
         }

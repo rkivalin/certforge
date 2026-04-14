@@ -72,6 +72,7 @@ pub async fn run(
 ) -> Result<()> {
     let mut state = State::load(state_dir)?;
     let mut state_dirty = false;
+    let mut pending_hooks: Vec<String> = Vec::new();
 
     let acme = AcmeClient::new(&config.acme).await?;
 
@@ -88,10 +89,27 @@ pub async fn run(
                 if renewed {
                     tracing::info!(name = %cert_config.name, "certificate renewed successfully");
                     state_dirty = true;
+                    pending_hooks.extend(cert_config.hooks.iter().cloned());
                 }
             }
             Err(e) => {
                 tracing::error!(name = %cert_config.name, error = %e, "certificate renewal failed");
+            }
+        }
+    }
+
+    // Run named hooks in config definition order, skipping those not triggered
+    if !pending_hooks.is_empty() {
+        for named_hook in &config.hook {
+            if !pending_hooks.contains(&named_hook.name) {
+                continue;
+            }
+            tracing::info!(hook = %named_hook.name, "running named hook");
+            let results = hooks::run_hooks(std::slice::from_ref(&named_hook.hook), dry_run).await;
+            for result in &results {
+                if let Err(e) = result {
+                    tracing::warn!(hook = %named_hook.name, error = %e, "named hook failed (non-fatal)");
+                }
             }
         }
     }
@@ -254,11 +272,13 @@ async fn renew_certificate(
         }
     }
 
-    // Run hooks
-    let hook_results = hooks::run_hooks(&cert_config.hooks, false).await;
-    for result in &hook_results {
-        if let Err(e) = result {
-            tracing::warn!(error = %e, "hook failed (non-fatal)");
+    // Run inline (per-certificate) hooks
+    if !cert_config.inline_hooks.is_empty() {
+        let hook_results = hooks::run_hooks(&cert_config.inline_hooks, false).await;
+        for result in &hook_results {
+            if let Err(e) = result {
+                tracing::warn!(error = %e, "inline hook failed (non-fatal)");
+            }
         }
     }
 
