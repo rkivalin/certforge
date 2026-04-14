@@ -5,9 +5,6 @@ use crate::error::{Error, Result};
 
 /// Parsed certificate information.
 pub struct CertInfo {
-    /// The full certificate chain PEM
-    #[allow(dead_code)]
-    pub pem_chain: String,
     /// DER-encoded leaf certificate
     pub leaf_der: Vec<u8>,
     /// Not-after (expiry) timestamp
@@ -47,7 +44,6 @@ impl CertInfo {
         let spki_der = cert.public_key().raw.to_vec();
 
         Ok(Self {
-            pem_chain: pem_data.to_string(),
             leaf_der,
             not_after,
             san,

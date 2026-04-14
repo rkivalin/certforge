@@ -264,28 +264,6 @@ impl DnsUpdater {
         Ok(records)
     }
 
-    /// Delete a specific TLSA record.
-    #[allow(dead_code)]
-    pub async fn delete_tlsa_record(
-        &mut self,
-        zone: &Name,
-        name: &Name,
-        tlsa: &TlsaRecord,
-    ) -> Result<()> {
-        let rdata = tlsa_to_rdata(tlsa);
-        let record = Record::from_rdata(name.clone(), 0, rdata);
-
-        let response = self
-            .client
-            .delete_by_rdata(record, zone.clone())
-            .await
-            .map_err(|e| dns_err("failed to delete TLSA record", e))?;
-        check_update_response("failed to delete TLSA record", &response)?;
-
-        tracing::debug!(%name, rdata = %tlsa.to_rdata_string(), "deleted TLSA record");
-        Ok(())
-    }
-
 }
 
 /// Convert our TlsaRecord to hickory RData.

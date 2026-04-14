@@ -134,7 +134,6 @@ fn default_propagation_delay() -> u64 {
 /// Challenge solver configuration, tagged by type.
 #[derive(Debug, Deserialize)]
 #[serde(tag = "type")]
-#[allow(dead_code)]
 pub enum SolverConfig {
     #[serde(rename = "dns-01")]
     Dns01 {
@@ -149,54 +148,32 @@ pub enum SolverConfig {
         /// Address(es) to listen on for standalone HTTP server.
         /// Accepts a single address or a list. If multiple are given,
         /// certforge tries all and succeeds if at least one binds.
-        #[serde(default, deserialize_with = "deserialize_listen_addrs")]
-        listen: Option<Vec<SocketAddr>>,
+        listen: Option<OneOrMany<SocketAddr>>,
         /// Directory to write challenge tokens for an existing web server.
         webroot: Option<PathBuf>,
     },
     #[serde(rename = "tls-alpn-01")]
     TlsAlpn01 {
         /// Address(es) to listen on for the TLS-ALPN server.
-        #[serde(deserialize_with = "deserialize_listen_addrs_required")]
-        listen: Vec<SocketAddr>,
+        listen: OneOrMany<SocketAddr>,
     },
 }
 
-/// Deserialize `listen` as either a single SocketAddr or a list.
-fn deserialize_listen_addrs<'de, D>(deserializer: D) -> std::result::Result<Option<Vec<SocketAddr>>, D::Error>
-where
-    D: serde::Deserializer<'de>,
-{
-    #[derive(Deserialize)]
-    #[serde(untagged)]
-    enum OneOrMany {
-        One(SocketAddr),
-        Many(Vec<SocketAddr>),
-    }
-
-    Option::<OneOrMany>::deserialize(deserializer).map(|opt| {
-        opt.map(|v| match v {
-            OneOrMany::One(addr) => vec![addr],
-            OneOrMany::Many(addrs) => addrs,
-        })
-    })
+/// Serde helper: accept a single value or a list.
+#[derive(Debug, Deserialize)]
+#[serde(untagged)]
+pub enum OneOrMany<T> {
+    One(T),
+    Many(Vec<T>),
 }
 
-fn deserialize_listen_addrs_required<'de, D>(deserializer: D) -> std::result::Result<Vec<SocketAddr>, D::Error>
-where
-    D: serde::Deserializer<'de>,
-{
-    #[derive(Deserialize)]
-    #[serde(untagged)]
-    enum OneOrMany {
-        One(SocketAddr),
-        Many(Vec<SocketAddr>),
+impl<T: Clone> OneOrMany<T> {
+    pub fn to_vec(&self) -> Vec<T> {
+        match self {
+            Self::One(v) => vec![v.clone()],
+            Self::Many(v) => v.clone(),
+        }
     }
-
-    OneOrMany::deserialize(deserializer).map(|v| match v {
-        OneOrMany::One(addr) => vec![addr],
-        OneOrMany::Many(addrs) => addrs,
-    })
 }
 
 #[derive(Debug, Deserialize)]
@@ -378,10 +355,6 @@ impl Config {
         })
     }
 
-    #[allow(dead_code)]
-    pub fn find_certificate(&self, name: &str) -> Option<&CertificateConfig> {
-        self.certificates.iter().find(|c| c.name == name)
-    }
 
     fn validate(&self) -> Result<()> {
         // ACME config

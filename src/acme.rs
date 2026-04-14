@@ -15,12 +15,9 @@ pub struct AcmeClient {
 }
 
 /// Generic challenge information for any challenge type.
-#[allow(dead_code)]
 pub struct ChallengeInfo {
     /// The identifier being validated (domain name or IP address).
     pub identifier: String,
-    /// The challenge type that was selected.
-    pub challenge_type: ChallengeType,
     /// The challenge token.
     pub token: String,
     /// The full key authorization string.
@@ -163,7 +160,6 @@ impl AcmeClient {
 
             challenges.push(ChallengeInfo {
                 identifier,
-                challenge_type: desired,
                 token,
                 key_authorization,
                 dns_value,
