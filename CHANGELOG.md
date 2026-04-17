@@ -7,6 +7,7 @@
 ### Fixes
 
 - Fix `renew_before_days` not triggering renewal on the exact day boundary (e.g. `renew_before_days = 3` did not renew when 3 days and 23 hours remained, even though status showed "3 days")
+- Fix file permission updates not respecting `--dry-run` flag
 
 ### Changes
 

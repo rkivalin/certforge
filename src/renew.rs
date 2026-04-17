@@ -83,7 +83,7 @@ pub async fn run(
             && cert_config.name != filter {
                 continue;
             }
-        if let Err(e) = crate::permissions::ensure_permissions(cert_config) {
+        if let Err(e) = crate::permissions::ensure_permissions(cert_config, dry_run) {
             tracing::warn!(name = %cert_config.name, error = %e, "failed to set file permissions");
         }
     }
@@ -275,7 +275,7 @@ async fn renew_certificate(
     save_key(&key, cert_config).await?;
 
     // Apply file permissions
-    crate::permissions::ensure_permissions(cert_config)?;
+    crate::permissions::ensure_permissions(cert_config, false)?;
 
     // Publish DANE TLSA records
     if !cert_config.dane.is_empty() {

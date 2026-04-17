@@ -5,6 +5,7 @@ use crate::error::{Error, Result};
 
 /// Apply configured file permissions (mode, owner, group) to a path.
 /// Only makes system calls when the current state differs from the desired state.
+/// In dry_run mode, logs what would change without applying.
 /// Skips if the file does not exist.
 #[cfg(unix)]
 pub fn apply(
@@ -13,6 +14,7 @@ pub fn apply(
     default_mode: u32,
     owner: Option<&str>,
     group: Option<&str>,
+    dry_run: bool,
 ) -> Result<()> {
     if !path.exists() {
         return Ok(());
@@ -28,8 +30,12 @@ pub fn apply(
     let metadata = std::fs::metadata(path)?;
     let current_mode = metadata.permissions().mode() & 0o7777;
     if current_mode != desired_mode {
-        std::fs::set_permissions(path, std::fs::Permissions::from_mode(desired_mode))?;
-        tracing::info!(path = %path.display(), from = format!("{current_mode:04o}"), to = format!("{desired_mode:04o}"), "updated file mode");
+        if dry_run {
+            tracing::info!(path = %path.display(), from = format!("{current_mode:04o}"), to = format!("{desired_mode:04o}"), "dry-run: would update file mode");
+        } else {
+            std::fs::set_permissions(path, std::fs::Permissions::from_mode(desired_mode))?;
+            tracing::info!(path = %path.display(), from = format!("{current_mode:04o}"), to = format!("{desired_mode:04o}"), "updated file mode");
+        }
     }
 
     // Check and apply ownership
@@ -51,13 +57,22 @@ pub fn apply(
         let gid_changed = desired_gid.is_some_and(|g| g != current_gid);
 
         if uid_changed || gid_changed {
-            chown(path, desired_uid, desired_gid)?;
-            tracing::info!(
-                path = %path.display(),
-                uid = ?desired_uid.filter(|_| uid_changed),
-                gid = ?desired_gid.filter(|_| gid_changed),
-                "updated file ownership"
-            );
+            if dry_run {
+                tracing::info!(
+                    path = %path.display(),
+                    uid = ?desired_uid.filter(|_| uid_changed),
+                    gid = ?desired_gid.filter(|_| gid_changed),
+                    "dry-run: would update file ownership"
+                );
+            } else {
+                chown(path, desired_uid, desired_gid)?;
+                tracing::info!(
+                    path = %path.display(),
+                    uid = ?desired_uid.filter(|_| uid_changed),
+                    gid = ?desired_gid.filter(|_| gid_changed),
+                    "updated file ownership"
+                );
+            }
         }
     }
 
@@ -65,7 +80,7 @@ pub fn apply(
 }
 
 /// Ensure file permissions for a certificate's key and cert files.
-pub fn ensure_permissions(cert_config: &CertificateConfig) -> Result<()> {
+pub fn ensure_permissions(cert_config: &CertificateConfig, dry_run: bool) -> Result<()> {
     #[cfg(unix)]
     {
         if let Some(key_path) = &cert_config.key_path {
@@ -75,6 +90,7 @@ pub fn ensure_permissions(cert_config: &CertificateConfig) -> Result<()> {
                 0o600,
                 cert_config.key_owner.as_deref(),
                 cert_config.key_group.as_deref(),
+                dry_run,
             )?;
         }
         apply(
@@ -83,6 +99,7 @@ pub fn ensure_permissions(cert_config: &CertificateConfig) -> Result<()> {
             0o644,
             cert_config.cert_owner.as_deref(),
             cert_config.cert_group.as_deref(),
+            dry_run,
         )?;
     }
     Ok(())
