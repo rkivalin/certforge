@@ -1,14 +1,18 @@
 # Changelog
 
-## 0.7.0 (unreleased)
+## 0.8.0 (unreleased)
 
 ### Features
-
-- Custom file permissions for key and certificate files (`key_mode`, `key_owner`, `key_group`, `cert_mode`, `cert_owner`, `cert_group`). Permissions are applied on every renewal run, even if the certificate is not due for renewal.
 
 ### Fixes
 
 ### Changes
+
+## 0.7.0 (2026-04-17)
+
+### Features
+
+- Custom file permissions for key and certificate files (`key_mode`, `key_owner`, `key_group`, `cert_mode`, `cert_owner`, `cert_group`). Permissions are applied on every renewal run, even if the certificate is not due for renewal.
 
 ## 0.6.0 (2026-04-14)
 
