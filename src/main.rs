@@ -8,6 +8,7 @@ mod dns;
 mod error;
 mod hooks;
 mod keys;
+mod permissions;
 mod renew;
 mod solver;
 mod state;

@@ -187,8 +187,26 @@ pub struct CertificateConfig {
 
     pub key_credential: Option<PathBuf>,
     pub key_path: Option<PathBuf>,
+    /// File mode for key_path (octal string, e.g. "0640"). Default: "0600".
+    #[serde(default)]
+    pub key_mode: Option<String>,
+    /// Owner user for key_path.
+    #[serde(default)]
+    pub key_owner: Option<String>,
+    /// Owner group for key_path.
+    #[serde(default)]
+    pub key_group: Option<String>,
 
     pub cert_path: PathBuf,
+    /// File mode for cert_path (octal string, e.g. "0644"). Default: "0644".
+    #[serde(default)]
+    pub cert_mode: Option<String>,
+    /// Owner user for cert_path.
+    #[serde(default)]
+    pub cert_owner: Option<String>,
+    /// Owner group for cert_path.
+    #[serde(default)]
+    pub cert_group: Option<String>,
 
     /// ACME profile to use for the order.
     /// Some providers require a specific profile for certain certificate types
@@ -357,6 +375,11 @@ pub struct NamedHookConfig {
     pub hook: HookConfig,
 }
 
+/// Parse an octal mode string (e.g., "0640") to a u32.
+pub fn parse_mode(s: &str) -> Result<u32> {
+    u32::from_str_radix(s, 8).map_err(|_| Error::Config(format!("invalid file mode '{s}' (expected octal, e.g. \"0640\")")))
+}
+
 impl CertificateConfig {
     /// Resolve the solver name for the i-th domain.
     /// Priority: solvers[i] > solver > default_solver.
@@ -502,6 +525,16 @@ impl Config {
                     "certificate {}: either key_credential or key_path must be set",
                     cert.name
                 )));
+            }
+            if let Some(mode) = &cert.key_mode {
+                parse_mode(mode).map_err(|_| Error::Config(format!(
+                    "certificate {}: invalid key_mode '{mode}'", cert.name
+                )))?;
+            }
+            if let Some(mode) = &cert.cert_mode {
+                parse_mode(mode).map_err(|_| Error::Config(format!(
+                    "certificate {}: invalid cert_mode '{mode}'", cert.name
+                )))?;
             }
 
             // solver and solvers are mutually exclusive

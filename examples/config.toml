@@ -81,7 +81,13 @@ dns = "main"                    # references [dns.main]
 # key_type = "ecdsa-p256"        # ecdsa-p256, ecdsa-p384
 # key_credential = "/etc/credstore.encrypted/mail-tls-key"
 # # key_path = "/etc/certforge/keys/mail.key"
+# # key_mode = "0640"             # file mode (default: 0600)
+# # key_owner = "root"            # file owner (default: unchanged)
+# # key_group = "postfix"       # file group (default: unchanged)
 # cert_path = "/etc/certforge/certs/mail.pem"
+# # cert_mode = "0644"            # file mode (default: 0644)
+# # cert_owner = "root"
+# # cert_group = "postfix"
 # renew_before_days = 30
 # rotate_key = false
 # # Named hooks (deduplicated if multiple certs reference the same hook)

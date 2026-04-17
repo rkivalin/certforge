@@ -198,6 +198,25 @@ If neither `solver` nor `solvers` is set, the global `default_solver` is used:
 default_solver = "dns"
 ```
 
+### File permissions
+
+Key and certificate files support custom permissions. Mode is specified as an octal string. Owner and group are resolved by name:
+
+```toml
+[[certificate]]
+name = "mail"
+key_path = "/etc/certforge/keys/mail.key"
+key_mode = "0640"
+key_owner = "root"
+key_group = "postfix"
+cert_path = "/etc/certforge/certs/mail.pem"
+cert_mode = "0644"
+cert_owner = "root"
+cert_group = "postfix"
+```
+
+Defaults: key mode `0600`, cert mode `0644`. Owner and group are not changed unless explicitly set. Permissions are applied on every `certforge renew` run, even when no certificates need renewal.
+
 ### ACME profiles
 
 Some ACME providers require a specific profile for certain certificate types. Set `profile` on a certificate to select one. For example, Let's Encrypt requires the `shortlived` profile for IP address certificates (see [Let's Encrypt profiles](https://letsencrypt.org/docs/profiles/)).

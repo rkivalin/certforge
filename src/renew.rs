@@ -77,6 +77,17 @@ pub async fn run(
     let mut state_dirty = false;
     let mut pending_hooks: Vec<String> = Vec::new();
 
+    // Ensure file permissions on existing files before renewal
+    for cert_config in &config.certificates {
+        if let Some(filter) = name_filter
+            && cert_config.name != filter {
+                continue;
+            }
+        if let Err(e) = crate::permissions::ensure_permissions(cert_config) {
+            tracing::warn!(name = %cert_config.name, error = %e, "failed to set file permissions");
+        }
+    }
+
     let acme = AcmeClient::new(&config.acme).await?;
 
     for cert_config in &config.certificates {
@@ -263,6 +274,9 @@ async fn renew_certificate(
 
     save_key(&key, cert_config).await?;
 
+    // Apply file permissions
+    crate::permissions::ensure_permissions(cert_config)?;
+
     // Publish DANE TLSA records
     if !cert_config.dane.is_empty() {
         let cert_info = CertInfo::from_pem(&cert_pem)?;
@@ -373,11 +387,6 @@ async fn save_key(key: &CertKeyPair, cert_config: &CertificateConfig) -> Result<
             std::fs::create_dir_all(parent)?;
         }
         std::fs::write(key_path, &pem)?;
-        #[cfg(unix)]
-        {
-            use std::os::unix::fs::PermissionsExt;
-            std::fs::set_permissions(key_path, std::fs::Permissions::from_mode(0o600))?;
-        }
         tracing::info!(path = %key_path.display(), "saved private key");
     }
 

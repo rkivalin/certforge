@@ -1,6 +1,6 @@
 certforge (0.7.0-1) unstable; urgency=low
 
-  * No changes
+  * Custom file permissions for key and certificate files
 
  -- Roman Kivalin <roman@shl.dev>  Mon, 14 Apr 2026 00:00:00 +0000
 

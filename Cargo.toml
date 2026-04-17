@@ -64,5 +64,8 @@ rustls = { version = "0.23", default-features = false, features = ["ring", "std"
 # Trait async support
 async-trait = "0.1"
 
+# Unix permissions
+libc = "0.2"
+
 # systemd D-Bus
 zbus = "5"
