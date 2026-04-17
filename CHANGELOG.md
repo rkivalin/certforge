@@ -1,14 +1,18 @@
 # Changelog
 
-## 0.8.0 (unreleased)
+## 0.9.0 (unreleased)
 
 ### Features
 
 ### Fixes
 
-- Fix HTTP-01 and TLS-ALPN-01 solvers sometimes hanging on startup due to a `Notify` race condition
-
 ### Changes
+
+## 0.8.0 (2026-04-17)
+
+### Fixes
+
+- Fix HTTP-01 and TLS-ALPN-01 solvers sometimes hanging on startup due to a `Notify` race condition
 
 ## 0.7.0 (2026-04-17)
 
