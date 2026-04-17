@@ -77,6 +77,9 @@ impl TlsAlpn01Solver {
 
             let acceptor = TlsAcceptor::from(tls_config);
 
+            // Register the listener before spawning so we don't miss the notification
+            let notified = self.server_started.notified();
+
             let handle = tokio::spawn(async move {
                 started.notify_waiters();
                 let mut handles = Vec::new();
@@ -99,7 +102,7 @@ impl TlsAlpn01Solver {
                 }
             });
 
-            self.server_started.notified().await;
+            notified.await;
 
             Ok::<_, Error>(handle)
         }).await;

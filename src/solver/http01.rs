@@ -61,6 +61,9 @@ impl Http01StandaloneSolver {
             let tokens = self.tokens.clone();
             let started = self.server_started.clone();
 
+            // Register the listener before spawning so we don't miss the notification
+            let notified = self.server_started.notified();
+
             let handle = tokio::spawn(async move {
                 started.notify_waiters();
                 // Spawn an accept loop for each bound listener
@@ -93,7 +96,7 @@ impl Http01StandaloneSolver {
                 }
             });
 
-            self.server_started.notified().await;
+            notified.await;
 
             Ok::<_, Error>(handle)
         }).await;
