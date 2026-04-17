@@ -1,6 +1,6 @@
 # Maintainer: Roman Kivalin <roman@shl.dev>
 pkgname=certforge
-pkgver=0.9.0
+pkgver=0.10.0
 pkgrel=1
 pkgdesc='ACME certificate manager with DANE and systemd integration'
 arch=('x86_64' 'aarch64')

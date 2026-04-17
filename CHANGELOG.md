@@ -1,8 +1,14 @@
 # Changelog
 
-## 0.9.0 (unreleased)
+## 0.10.0 (unreleased)
 
 ### Features
+
+### Fixes
+
+### Changes
+
+## 0.9.0 (2026-04-18)
 
 ### Fixes
 

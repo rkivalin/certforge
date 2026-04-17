@@ -1,3 +1,9 @@
+certforge (0.10.0-1) unstable; urgency=low
+
+  * No changes
+
+ -- Roman Kivalin <roman@shl.dev>  Fri, 18 Apr 2026 00:00:00 +0000
+
 certforge (0.9.0-1) unstable; urgency=low
 
   * Fix renew_before_days not triggering on exact day boundary
