@@ -6,6 +6,8 @@
 
 ### Fixes
 
+- Fix `renew_before_days` not triggering renewal on the exact day boundary (e.g. `renew_before_days = 3` did not renew when 3 days and 23 hours remained, even though status showed "3 days")
+
 ### Changes
 
 ## 0.8.0 (2026-04-17)

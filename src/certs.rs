@@ -52,16 +52,24 @@ impl CertInfo {
     }
 
     /// Check if the certificate expires within the given number of days.
+    /// Uses rounded day count so that renew_before_days = 3 triggers
+    /// renewal when days_until_expiry() reports 3 or less.
     pub fn expires_within_days(&self, days: u32) -> bool {
-        let now = chrono::Utc::now();
-        let threshold = now + chrono::Duration::days(days as i64);
-        self.not_after <= threshold
+        self.days_until_expiry() <= days as i64
     }
 
-    /// Days until expiry (negative if already expired).
+    /// Days until expiry, rounded to nearest day (negative if already expired).
+    /// Rounding provides a half-day buffer that absorbs systemd timer
+    /// randomization without missing the renewal window.
     pub fn days_until_expiry(&self) -> i64 {
         let now = chrono::Utc::now();
-        (self.not_after - now).num_days()
+        let secs = (self.not_after - now).num_seconds();
+        let half_day = 43200; // 12 * 60 * 60
+        if secs >= 0 {
+            (secs + half_day) / 86400
+        } else {
+            (secs - half_day) / 86400
+        }
     }
 }
 
