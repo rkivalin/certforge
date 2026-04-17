@@ -52,85 +52,6 @@ jobs:
           tar czf "../../../certforge-${{ matrix.arch }}.tar.gz" certforge
           cd ../../..
 
-      - name: Upload artifact
-        uses: actions/upload-artifact@v7
-        with:
-          name: certforge-${{ matrix.arch }}
-          path: certforge-${{ matrix.arch }}.tar.gz
-
-  package-archlinux:
-    needs: build
-    runs-on: ubuntu-latest
-    container: archlinux:base-devel
-    steps:
-      - uses: actions/checkout@v6
-
-      - name: Download binary
-        uses: actions/download-artifact@v8
-        with:
-          name: certforge-amd64
-
-      - name: Build package
-        run: |
-          pacman -Syu --noconfirm
-
-          VERSION=${GITHUB_REF_NAME#v}
-
-          # Create a fake PKGBUILD that packages the pre-built binary
-          cat >PKGBUILD <<'PKGEOF'
-          # Maintainer: Roman Kivalin <roman@shl.dev>
-          pkgname=certforge
-          pkgver=VERSION_PLACEHOLDER
-          pkgrel=1
-          pkgdesc='ACME certificate manager with DANE and systemd integration'
-          arch=('x86_64')
-          url='https://github.com/rkivalin/certforge'
-          license=('MIT')
-          depends=('systemd-libs')
-          backup=('etc/certforge/config.toml')
-          source=("certforge-amd64.tar.gz")
-          sha256sums=('SKIP')
-
-          package() {
-            install -Dm755 "$srcdir/certforge" "$pkgdir/usr/bin/certforge"
-            install -Dm644 "$startdir/examples/certforge.service" "$pkgdir/usr/lib/systemd/system/certforge.service"
-            install -Dm644 "$startdir/examples/certforge.timer" "$pkgdir/usr/lib/systemd/system/certforge.timer"
-            install -Dm644 "$startdir/examples/config.toml" "$pkgdir/etc/certforge/config.toml"
-            install -Dm644 "$startdir/LICENSE" "$pkgdir/usr/share/licenses/$pkgname/LICENSE"
-            install -dm750 "$pkgdir/etc/certforge/certs"
-            install -dm700 "$pkgdir/var/lib/certforge"
-          }
-          PKGEOF
-          sed -i "s/VERSION_PLACEHOLDER/$VERSION/" PKGBUILD
-
-          useradd -m builder
-          chown -R builder:builder .
-          su builder -c 'makepkg --noconfirm --skipinteg'
-
-      - name: Upload artifact
-        uses: actions/upload-artifact@v7
-        with:
-          name: archlinux-package
-          path: "*.pkg.tar.zst"
-
-  package-debian:
-    needs: build
-    runs-on: ubuntu-latest
-    strategy:
-      matrix:
-        include:
-          - arch: amd64
-            target: x86_64-unknown-linux-gnu
-          - arch: arm64
-            target: aarch64-unknown-linux-gnu
-    steps:
-      - uses: actions/checkout@v6
-
-      - name: Download binary
-        uses: actions/download-artifact@v8
-        with:
-          name: certforge-${{ matrix.arch }}
-
       - name: Build .deb
         run: |
           VERSION=${GITHUB_REF_NAME#v}
@@ -140,8 +61,7 @@ jobs:
           mkdir -p "$PKG/usr/lib/systemd/system"
           mkdir -p "$PKG/etc/certforge/certs"
 
-          tar xzf "certforge-${{ matrix.arch }}.tar.gz"
-          install -Dm755 certforge "$PKG/usr/bin/certforge"
+          install -Dm755 "target/${{ matrix.target }}/release/certforge" "$PKG/usr/bin/certforge"
           install -Dm644 examples/certforge.service "$PKG/usr/lib/systemd/system/certforge.service"
           install -Dm644 examples/certforge.timer "$PKG/usr/lib/systemd/system/certforge.timer"
           install -Dm644 examples/config.toml "$PKG/etc/certforge/config.toml"
@@ -163,14 +83,37 @@ jobs:
 
           dpkg-deb --build --root-owner-group "$PKG"
 
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v7
+        with:
+          name: build-${{ matrix.arch }}
+          path: |
+            certforge-${{ matrix.arch }}.tar.gz
+            *.deb
+
+  package-archlinux:
+    runs-on: ubuntu-latest
+    container: archlinux:base-devel
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Build package
+        run: |
+          pacman -Syu --noconfirm rustup
+
+          useradd -m builder
+          chown -R builder:builder .
+          su builder -c 'rustup toolchain install stable --profile minimal'
+          su builder -c 'makepkg --noconfirm'
+
       - name: Upload artifact
         uses: actions/upload-artifact@v7
         with:
-          name: debian-${{ matrix.arch }}
-          path: "*.deb"
+          name: archlinux-package
+          path: "certforge-[0-9]*.pkg.tar.zst"
 
   release:
-    needs: [build, package-archlinux, package-debian]
+    needs: [build, package-archlinux]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
@@ -180,25 +123,31 @@ jobs:
         with:
           path: artifacts
 
+      - name: Extract changelog
+        run: |
+          VERSION=${GITHUB_REF_NAME#v}
+          sed -n "/^## ${VERSION} /,/^## [0-9]/{/^## [0-9]/d;p}" CHANGELOG.md \
+            | sed '/^### .*/{N;/\n$/d}' \
+            | sed -e :a -e '/^\n*$/{$d;N;ba}' -e '/^$/N;/\n$/ba' \
+            >/tmp/release-notes.md
+
       - name: Create release
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           VERSION=${GITHUB_REF_NAME#v}
-          # Collect all release files
           mkdir release
-          cp artifacts/certforge-amd64/certforge-amd64.tar.gz release/
-          cp artifacts/certforge-arm64/certforge-arm64.tar.gz release/
-          cp artifacts/archlinux-package/*.pkg.tar.zst release/ || true
-          cp artifacts/debian-amd64/*.deb release/ || true
-          cp artifacts/debian-arm64/*.deb release/ || true
+          cp artifacts/build-amd64/certforge-amd64.tar.gz release/
+          cp artifacts/build-arm64/certforge-arm64.tar.gz release/
+          cp artifacts/build-amd64/*.deb release/
+          cp artifacts/build-arm64/*.deb release/
+          cp artifacts/archlinux-package/*.pkg.tar.zst release/
 
-          # Generate checksums
           cd release
           sha256sum * >SHA256SUMS
           cd ..
 
           gh release create "${GITHUB_REF_NAME}" \
             --title "certforge ${VERSION}" \
-            --generate-notes \
+            --notes-file /tmp/release-notes.md \
             release/*

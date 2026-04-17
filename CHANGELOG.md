@@ -11,6 +11,9 @@
 
 ### Changes
 
+- Arch Linux package now builds from source using the real PKGBUILD instead of repackaging a pre-built binary
+- Release notes now include the changelog entry for the version
+
 ## 0.8.0 (2026-04-17)
 
 ### Fixes

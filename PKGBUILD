@@ -9,7 +9,7 @@ license=('MIT')
 depends=('systemd-libs')
 makedepends=('rustup')
 backup=('etc/certforge/config.toml')
-options=(!lto)
+options=(!lto !debug)
 
 prepare() {
   cd "$startdir"
