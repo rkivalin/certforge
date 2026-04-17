@@ -126,9 +126,19 @@ jobs:
       - name: Extract changelog
         run: |
           VERSION=${GITHUB_REF_NAME#v}
+          # Extract content for this version, strip empty sections, trim trailing blanks
           sed -n "/^## ${VERSION} /,/^## [0-9]/{/^## [0-9]/d;p}" CHANGELOG.md \
-            | sed '/^### .*/{N;/\n$/d}' \
-            | sed -e :a -e '/^\n*$/{$d;N;ba}' -e '/^$/N;/\n$/ba' \
+            | awk '
+              BEGIN { header=""; body="" }
+              /^### / {
+                if (header != "" && body != "") printf "%s\n\n%s", header, body
+                header = $0; body = ""
+                next
+              }
+              /^- / || /^  / { body = body $0 "\n"; next }
+              /^$/ { if (body != "") body = body "\n" }
+              END { if (header != "" && body != "") printf "%s\n\n%s", header, body }
+            ' | sed -e :a -e '/^\n*$/{$d;N;ba}' \
             >/tmp/release-notes.md
 
       - name: Create release
