@@ -72,6 +72,42 @@ async fn systemd_unit_action(unit: &str, action: &str) -> Result<()> {
             message: format!("failed to create proxy: {e}"),
         })?;
 
+    // Check if the unit is active before acting — don't start a stopped service
+    let unit_path: zbus::zvariant::OwnedObjectPath = proxy
+        .call("GetUnit", &(unit,))
+        .await
+        .map_err(|e| Error::Hook {
+            hook: format!("systemd-{action}({unit})"),
+            message: format!("GetUnit failed: {e}"),
+        })?;
+
+    let unit_proxy: zbus::Proxy<'_> = zbus::proxy::Builder::new(&connection)
+        .interface("org.freedesktop.systemd1.Unit")
+        .expect("valid interface")
+        .path(unit_path)
+        .expect("valid path")
+        .destination("org.freedesktop.systemd1")
+        .expect("valid destination")
+        .build()
+        .await
+        .map_err(|e| Error::Hook {
+            hook: format!("systemd-{action}({unit})"),
+            message: format!("failed to create unit proxy: {e}"),
+        })?;
+
+    let active_state: String = unit_proxy
+        .get_property("ActiveState")
+        .await
+        .map_err(|e| Error::Hook {
+            hook: format!("systemd-{action}({unit})"),
+            message: format!("failed to get ActiveState: {e}"),
+        })?;
+
+    if active_state != "active" {
+        tracing::info!(%unit, %active_state, "skipping {action}: unit is not active");
+        return Ok(());
+    }
+
     let method = match action {
         "reload" => "ReloadUnit",
         "restart" => "RestartUnit",

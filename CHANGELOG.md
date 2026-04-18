@@ -4,6 +4,8 @@
 
 ### Features
 
+- Systemd reload/restart hooks skip units that are not active, avoiding unintended service starts
+
 ### Fixes
 
 ### Changes
