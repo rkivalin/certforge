@@ -8,6 +8,11 @@
 
 ### Fixes
 
+- Don't re-save private key on renewal when the key was not rotated or newly generated
+- DANE TLSA publication failures no longer prevent post-renewal hooks from running
+- Remove `ProtectSystem=strict` from systemd service — it prevented writing to paths outside the hardcoded whitelist, but users can configure arbitrary paths
+- Improve error messages for file write failures to include the path
+
 ### Changes
 
 ## 0.9.0 (2026-04-18)

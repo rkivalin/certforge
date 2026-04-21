@@ -1,6 +1,10 @@
 certforge (0.10.0-1) unstable; urgency=low
 
   * Systemd hooks skip units that are not active
+  * Don't re-save unchanged private key on renewal
+  * DANE failures no longer block post-renewal hooks
+  * Remove ProtectSystem=strict from systemd service
+  * Improve error messages for file write failures
 
  -- Roman Kivalin <roman@shl.dev>  Fri, 18 Apr 2026 00:00:00 +0000
 

@@ -185,8 +185,8 @@ async fn renew_certificate(
     let solvers = build_solvers(config, &solver_names)?;
 
     // Determine key pair
-    let key = determine_key(config, cert_config, state, state_dir, dry_run).await?;
-    let key = match key {
+    let key_result = determine_key(config, cert_config, state, state_dir, dry_run).await?;
+    let key_result = match key_result {
         Some(k) => k,
         None => return Ok(false), // Pre-publication deferred
     };
@@ -198,7 +198,7 @@ async fn renew_certificate(
 
     // Generate CSR
     tracing::debug!(name = %cert_config.name, domains = ?cert_config.domains, key_type = ?cert_config.key_type, "generating CSR");
-    let pkcs8_der = rustls_pki_types::PrivatePkcs8KeyDer::from(key.pkcs8_der.as_slice());
+    let pkcs8_der = rustls_pki_types::PrivatePkcs8KeyDer::from(key_result.key.pkcs8_der.as_slice());
     let rcgen_alg = match cert_config.key_type {
         crate::config::KeyType::EcdsaP256 => &rcgen::PKCS_ECDSA_P256_SHA256,
         crate::config::KeyType::EcdsaP384 => &rcgen::PKCS_ECDSA_P384_SHA384,
@@ -267,25 +267,41 @@ async fn renew_certificate(
 
     // Save certificate
     if let Some(parent) = cert_config.cert_path.parent() {
-        std::fs::create_dir_all(parent)?;
+        std::fs::create_dir_all(parent).map_err(|e| {
+            Error::Certificate(format!("failed to create directory {}: {e}", parent.display()))
+        })?;
     }
-    std::fs::write(&cert_config.cert_path, &cert_pem)?;
+    std::fs::write(&cert_config.cert_path, &cert_pem).map_err(|e| {
+        Error::Certificate(format!("failed to write certificate to {}: {e}", cert_config.cert_path.display()))
+    })?;
     tracing::info!(path = %cert_config.cert_path.display(), "saved certificate");
 
-    save_key(&key, cert_config).await?;
+    if key_result.needs_save {
+        save_key(&key_result.key, cert_config).await?;
+    }
 
     // Apply file permissions
     crate::permissions::ensure_permissions(cert_config, false)?;
 
-    // Publish DANE TLSA records
+    // Publish DANE TLSA records (non-fatal: don't block hooks if DANE fails)
     if !cert_config.dane.is_empty() {
-        let cert_info = CertInfo::from_pem(&cert_pem)?;
-        for dane_config in &cert_config.dane {
-            let records = dane::compute_tlsa_records(&cert_info, dane_config)?;
-            let dns_config = config.dns_client(&dane_config.dns)?;
-            let signer = tsig::load_tsig_signer(dns_config).await?;
-            let mut updater = DnsUpdater::connect(dns_config, signer).await?;
-            dane::publish_tlsa(&mut updater, dns_config, dane_config, &records).await?;
+        match CertInfo::from_pem(&cert_pem) {
+            Ok(cert_info) => {
+                for dane_config in &cert_config.dane {
+                    if let Err(e) = async {
+                        let records = dane::compute_tlsa_records(&cert_info, dane_config)?;
+                        let dns_config = config.dns_client(&dane_config.dns)?;
+                        let signer = tsig::load_tsig_signer(dns_config).await?;
+                        let mut updater = DnsUpdater::connect(dns_config, signer).await?;
+                        dane::publish_tlsa(&mut updater, dns_config, dane_config, &records).await
+                    }.await {
+                        tracing::error!(name = %cert_config.name, error = %e, "failed to publish DANE TLSA records");
+                    }
+                }
+            }
+            Err(e) => {
+                tracing::error!(name = %cert_config.name, error = %e, "failed to parse certificate for DANE");
+            }
         }
     }
 
@@ -302,6 +318,13 @@ async fn renew_certificate(
     Ok(true)
 }
 
+/// Key determination result.
+struct KeyResult {
+    key: CertKeyPair,
+    /// Whether the key is new (generated or rotated) and needs to be saved.
+    needs_save: bool,
+}
+
 /// Determine the key pair for a certificate, handling key rotation and pre-publication.
 /// Returns None if renewal is deferred due to DANE pre-publication.
 async fn determine_key(
@@ -310,11 +333,12 @@ async fn determine_key(
     state: &mut State,
     state_dir: &Path,
     dry_run: bool,
-) -> Result<Option<CertKeyPair>> {
+) -> Result<Option<KeyResult>> {
     if let Some(pending) = state.pending_rotations.remove(&cert_config.name) {
         let key_data = std::fs::read(&pending.pending_key_path)
             .map_err(|e| Error::Key(format!("failed to read pending key: {e}")))?;
-        return Ok(Some(CertKeyPair::from_pem_or_der(&key_data, &cert_config.key_type)?));
+        let key = CertKeyPair::from_pem_or_der(&key_data, &cert_config.key_type)?;
+        return Ok(Some(KeyResult { key, needs_save: true }));
     }
 
     if cert_config.rotate_key {
@@ -357,7 +381,7 @@ async fn determine_key(
             return Ok(None);
         }
 
-        return Ok(Some(new_key));
+        return Ok(Some(KeyResult { key: new_key, needs_save: true }));
     }
 
     // Load existing key or generate if first time
@@ -368,10 +392,11 @@ async fn determine_key(
     )
     .await
     {
-        Ok(key) => Ok(Some(key)),
+        Ok(key) => Ok(Some(KeyResult { key, needs_save: false })),
         Err(_) => {
             tracing::info!(name = %cert_config.name, "generating new key pair");
-            Ok(Some(CertKeyPair::generate(&cert_config.key_type)?))
+            let key = CertKeyPair::generate(&cert_config.key_type)?;
+            Ok(Some(KeyResult { key, needs_save: true }))
         }
     }
 }
@@ -380,13 +405,19 @@ async fn save_key(key: &CertKeyPair, cert_config: &CertificateConfig) -> Result<
     let pem = key.to_pem();
 
     if let Some(cred_path) = &cert_config.key_credential {
-        credentials::encrypt_credential(pem.as_bytes(), cred_path).await?;
+        credentials::encrypt_credential(pem.as_bytes(), cred_path).await.map_err(|e| {
+            Error::Key(format!("failed to save encrypted key to {}: {e}", cred_path.display()))
+        })?;
         tracing::info!(path = %cred_path.display(), "saved private key (encrypted)");
     } else if let Some(key_path) = &cert_config.key_path {
         if let Some(parent) = key_path.parent() {
-            std::fs::create_dir_all(parent)?;
+            std::fs::create_dir_all(parent).map_err(|e| {
+                Error::Key(format!("failed to create directory {}: {e}", parent.display()))
+            })?;
         }
-        std::fs::write(key_path, &pem)?;
+        std::fs::write(key_path, &pem).map_err(|e| {
+            Error::Key(format!("failed to write key to {}: {e}", key_path.display()))
+        })?;
         tracing::info!(path = %key_path.display(), "saved private key");
     }
 

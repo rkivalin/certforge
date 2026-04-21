@@ -8,8 +8,6 @@ Type=oneshot
 ExecStart=/usr/bin/certforge renew
 
 # Hardening
-ProtectSystem=strict
-ReadWritePaths=/etc/certforge/certs /var/lib/certforge /etc/credstore.encrypted
 PrivateTmp=yes
 NoNewPrivileges=yes
 ProtectHome=yes
