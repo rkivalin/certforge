@@ -1,6 +1,14 @@
 # Changelog
 
-## 0.10.0 (unreleased)
+## 0.11.0 (unreleased)
+
+### Features
+
+### Fixes
+
+### Changes
+
+## 0.10.0 (2026-04-21)
 
 ### Features
 
@@ -12,8 +20,6 @@
 - DANE TLSA publication failures no longer prevent post-renewal hooks from running
 - Remove `ProtectSystem=strict` from systemd service — it prevented writing to paths outside the hardcoded whitelist, but users can configure arbitrary paths
 - Improve error messages for file write failures to include the path
-
-### Changes
 
 ## 0.9.0 (2026-04-18)
 
